@@ -12,7 +12,7 @@
   "metadata": {
     "name": "IMBUILDINGS-OFFICE-OCCUPANCY-COU",
     "description": "Infrared based Office Occupancy Counter",
-    "image": "assets/imbuildings-people-counter-black.png",
+    "image": "assets/imbuildings-office-occupancy-counter.png",
     "category": "devices",
     "vendor": "imbuildings"
   },
