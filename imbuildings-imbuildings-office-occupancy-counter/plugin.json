@@ -7,7 +7,7 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/thinger-io/plugins.git",
-    "directory": "imbuildings-imbuildings-people-counte"
+    "directory": "imbuildings-imbuildings-people-counter"
   },
   "metadata": {
     "name": "IMBUILDINGS-OFFICE-OCCUPANCY-COU",
