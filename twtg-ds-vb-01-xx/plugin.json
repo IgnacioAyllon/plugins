@@ -12,7 +12,7 @@
   "metadata": {
     "name": "twtg_ds-vb-01-xx",
     "description": "TWTG DS-VB-01-XX LoRaWAN device product. Preconfigured to work with any LNS Thinger plugin.",
-    "image": "assets/vb.png",
+    "image": "assets/twtg-ds-vb-01-xx.png",
     "category": "devices",
     "vendor": "twtg"
   },
