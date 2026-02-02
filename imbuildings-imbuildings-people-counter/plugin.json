@@ -110,6 +110,10 @@
             {
               "property": "dashboard",
               "value": {
+                "name": "People_Counter",
+                "placeholders": {
+                  "sources": []
+                },
                 "tabs": [
                   {
                     "name": "People Counter",
@@ -117,13 +121,13 @@
                       {
                         "layout": {
                           "col": 0,
-                          "row": 0,
+                          "row": 14,
                           "sizeX": 6,
                           "sizeY": 12
                         },
                         "panel": {
-                          "color": "#1976D2",
-                          "currentColor": "#1976D2",
+                          "color": "#F5F5F5",
+                          "currentColor": "#F5F5F5",
                           "showOffline": {
                             "type": "none"
                           },
@@ -146,7 +150,7 @@
                                 "group": []
                               }
                             },
-                            "color": "#2E93fA",
+                            "color": "#3498DB",
                             "name": "Counter A (In)",
                             "source": "bucket",
                             "timespan": {
@@ -166,7 +170,7 @@
                                 "group": []
                               }
                             },
-                            "color": "#66DA26",
+                            "color": "#E74C3C",
                             "name": "Counter B (Out)",
                             "source": "bucket",
                             "timespan": {
@@ -181,21 +185,21 @@
                       },
                       {
                         "layout": {
-                          "col": 6,
+                          "col": 0,
                           "row": 0,
                           "sizeX": 3,
                           "sizeY": 6
                         },
                         "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
+                          "color": "#F5F5F5",
+                          "currentColor": "#F5F5F5",
                           "showOffline": {
                             "type": "none"
                           },
                           "title": "Total Count A"
                         },
                         "properties": {
-                          "color": "#2E93fA",
+                          "color": "#3498DB",
                           "max": 10000,
                           "min": 0,
                           "unit": "people"
@@ -211,7 +215,7 @@
                                 "group": []
                               }
                             },
-                            "color": "#2E93fA",
+                            "color": "#3498DB",
                             "name": "Total A",
                             "source": "bucket",
                             "timespan": {
@@ -223,21 +227,21 @@
                       },
                       {
                         "layout": {
-                          "col": 9,
+                          "col": 3,
                           "row": 0,
                           "sizeX": 3,
                           "sizeY": 6
                         },
                         "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
+                          "color": "#F5F5F5",
+                          "currentColor": "#F5F5F5",
                           "showOffline": {
                             "type": "none"
                           },
                           "title": "Total Count B"
                         },
                         "properties": {
-                          "color": "#66DA26",
+                          "color": "#E74C3C",
                           "max": 10000,
                           "min": 0,
                           "unit": "people"
@@ -253,7 +257,7 @@
                                 "group": []
                               }
                             },
-                            "color": "#66DA26",
+                            "color": "#E74C3C",
                             "name": "Total B",
                             "source": "bucket",
                             "timespan": {
@@ -265,21 +269,21 @@
                       },
                       {
                         "layout": {
-                          "col": 6,
+                          "col": 0,
                           "row": 6,
                           "sizeX": 3,
                           "sizeY": 6
                         },
                         "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
+                          "color": "#F5F5F5",
+                          "currentColor": "#F5F5F5",
                           "showOffline": {
                             "type": "none"
                           },
                           "title": "Battery Voltage"
                         },
                         "properties": {
-                          "color": "#f0e924",
+                          "color": "#F39C12",
                           "max": 3.6,
                           "min": 2,
                           "unit": "V"
@@ -295,7 +299,7 @@
                                 "group": []
                               }
                             },
-                            "color": "#f0e924",
+                            "color": "#00DD00",
                             "name": "Battery",
                             "source": "bucket",
                             "timespan": {
@@ -307,21 +311,21 @@
                       },
                       {
                         "layout": {
-                          "col": 9,
+                          "col": 3,
                           "row": 6,
                           "sizeX": 3,
                           "sizeY": 6
                         },
                         "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
+                          "color": "#F5F5F5",
+                          "currentColor": "#F5F5F5",
                           "showOffline": {
                             "type": "none"
                           },
                           "title": "Sensor Status"
                         },
                         "properties": {
-                          "color": "#1abc9c",
+                          "color": "#27AE60",
                           "max": 255,
                           "min": 0,
                           "unit": ""
@@ -337,7 +341,7 @@
                                 "group": []
                               }
                             },
-                            "color": "#1abc9c",
+                            "color": "#27AE60",
                             "name": "Status",
                             "source": "bucket",
                             "timespan": {
@@ -346,176 +350,6 @@
                           }
                         ],
                         "type": "donutchart"
-                      },
-                      {
-                        "layout": {
-                          "col": 0,
-                          "row": 12,
-                          "sizeX": 12,
-                          "sizeY": 8
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "Recent Events"
-                        },
-                        "properties": {
-                          "source": "code",
-                          "template": "<div style=\"width:100%; height:100%; overflow-y:auto\">\n  <table class=\"table table-striped table-condensed\">\n    <thead>\n      <tr>\n        <th>Timestamp</th>\n        <th>Counter A</th>\n        <th>Counter B</th>\n        <th>Total A</th>\n        <th>Total B</th>\n        <th>Battery (V)</th>\n        <th>Status</th>\n      </tr>\n    </thead>\n    <tbody>\n      <tr ng-repeat=\"entry in value\">\n        <td>{{ entry.ts | date:'medium' }}</td>\n        <td>{{ entry.counter_a || '—' }}</td>\n        <td>{{ entry.counter_b || '—' }}</td>\n        <td>{{ entry.total_counter_a || '—' }}</td>\n        <td>{{ entry.total_counter_b || '—' }}</td>\n        <td>{{ entry.battery_voltage || '—' }}</td>\n        <td>{{ entry.sensor_status || '—' }}</td>\n      </tr>\n    </tbody>\n  </table>\n</div>\n"
-                        },
-                        "sources": [
-                          {
-                            "aggregation": {},
-                            "bucket": {
-                              "backend": "mongodb",
-                              "id": "imbuildings_people_counter_data",
-                              "mapping": "ts",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#1abc9c",
-                            "name": "timestamp",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
-                            }
-                          },
-                          {
-                            "aggregation": {},
-                            "bucket": {
-                              "backend": "mongodb",
-                              "id": "imbuildings_people_counter_data",
-                              "mapping": "counter_a",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#2E93fA",
-                            "name": "counter_a",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
-                            }
-                          },
-                          {
-                            "aggregation": {},
-                            "bucket": {
-                              "backend": "mongodb",
-                              "id": "imbuildings_people_counter_data",
-                              "mapping": "counter_b",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#66DA26",
-                            "name": "counter_b",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
-                            }
-                          },
-                          {
-                            "aggregation": {},
-                            "bucket": {
-                              "backend": "mongodb",
-                              "id": "imbuildings_people_counter_data",
-                              "mapping": "total_counter_a",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#3498db",
-                            "name": "total_a",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
-                            }
-                          },
-                          {
-                            "aggregation": {},
-                            "bucket": {
-                              "backend": "mongodb",
-                              "id": "imbuildings_people_counter_data",
-                              "mapping": "total_counter_b",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#9b59b6",
-                            "name": "total_b",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
-                            }
-                          },
-                          {
-                            "aggregation": {},
-                            "bucket": {
-                              "backend": "mongodb",
-                              "id": "imbuildings_people_counter_data",
-                              "mapping": "battery_voltage",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#f0e924",
-                            "name": "battery",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
-                            }
-                          },
-                          {
-                            "aggregation": {},
-                            "bucket": {
-                              "backend": "mongodb",
-                              "id": "imbuildings_people_counter_data",
-                              "mapping": "sensor_status",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#1abc9c",
-                            "name": "status",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
-                            }
-                          }
-                        ],
-                        "type": "html_time"
                       }
                     ]
                   }
