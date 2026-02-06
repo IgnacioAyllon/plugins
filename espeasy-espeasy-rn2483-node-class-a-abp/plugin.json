@@ -12,7 +12,7 @@
   "metadata": {
     "name": "ESPEASY-RN2483-NODE-CLASS-A-ABP",
     "description": "The ESPEasy RN2483 (Class A ABP) is a LoRaWAN® development board on Microchip RN2483 that supports Activation by Personalization (ABP). It supports over 100 sensors.",
-    "image": "assets/espeasy-rn2483-package.png",
+    "image": "assets/rn2483-ClassA-ABP.png",
     "category": "devices",
     "vendor": "espeasy"
   },
