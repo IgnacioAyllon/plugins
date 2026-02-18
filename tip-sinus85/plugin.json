@@ -1,1059 +1,1055 @@
 {
-  "name": "tip_sinus85",
-  "version": "1.0.0",
-  "description": "Direct measuring digital three-phase meter for DIN rail mounting",
-  "author": "Thinger.io",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/thinger-io/plugins.git",
-    "directory": "tip-sinus85"
-  },
-  "metadata": {
-    "name": "Tip SINUS85",
+    "name": "tip-sinus85",
+    "version": "1.0.0",
     "description": "Direct measuring digital three-phase meter for DIN rail mounting",
-    "image": "assets/sinus85.png",
-    "category": "devices",
-    "vendor": "tip"
-  },
-  "resources": {
-    "products": [
-      {
-        "description": "Direct measuring digital three-phase meter for DIN rail mounting",
-        "enabled": true,
+    "author": "Thinger.io",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/thinger-io/plugins.git",
+        "directory": "tip-sinus85"
+    },
+    "metadata": {
         "name": "Tip SINUS85",
-        "product": "tip_sinus85",
-        "profile": {
-          "api": {
-            "downlink": {
-              "enabled": true,
-              "handle_connectivity": false,
-              "request": {
-                "data": {
-                  "path": "/downlink",
-                  "payload": "{\n    \"data\"    : \"{{payload.data=\"\"}}\",\n    \"port\"    :  {{payload.port=85}},\n    \"priority\":  {{payload.priority=3}},\n    \"confirmed\" :  {{payload.confirmed=false}},\n    \"uplink\"  :  {{property.uplink}} \n}",
-                  "payload_function": "",
-                  "payload_type": "",
-                  "plugin": "{{property.uplink.source}}",
-                  "target": "plugin_endpoint"
-                }
-              },
-              "response": {
-                "data": {
-                  "source": "request_response"
-                }
-              }
-            },
-            "uplink": {
-              "device_id_resolver": "getId",
-              "enabled": true,
-              "handle_connectivity": true,
-              "request": {
-                "data": {
-                  "payload": "{{payload}}",
-                  "payload_function": "",
-                  "payload_type": "source_payload",
-                  "resource_stream": "uplink",
-                  "target": "resource_stream"
-                }
-              },
-              "response": {
-                "data": {
-                  "source": "request_response"
-                }
-              }
-            }
-          },
-          "autoprovisions": {
-            "device_autoprovisioning": {
-              "config": {
-                "mode": "pattern",
-                "pattern": "sinus85-.*"
-              },
-              "enabled": true
-            }
-          },
-          "buckets": {
-            "tip_sinus85_data": {
-              "backend": "influxdb",
-              "data": {
-                "payload": "{{payload}}",
-                "payload_function": "decodeThingerUplink",
-                "payload_type": "source_payload",
-                "resource": "uplink",
-                "source": "resource",
-                "update": "events"
-              },
-              "enabled": true,
-              "retention": {
-                "period": 12,
-                "unit": "months"
-              },
-              "tags": [
-                "energy",
-                "three_phase"
-              ]
-            }
-          },
-          "code": {
-            "code": "function decodeThingerUplink(thingerData) {\n    // 0. If data has already been decoded, we will return it\n    if (thingerData.decodedPayload) return thingerData.decodedPayload;\n    \n    // 1. Extract and Validate Input\n    // We need 'payload' (hex string) and 'fPort' (integer)\n    const hexPayload = thingerData.payload || \"\";\n    const port = thingerData.fPort || 1;\n\n    // 2. Convert Hex String to Byte Array\n    const bytes = [];\n    for (let i = 0; i < hexPayload.length; i += 2) {\n        bytes.push(parseInt(hexPayload.substr(i, 2), 16));\n    }\n\n    // 3. Dynamic Function Detection and Execution\n    \n    // CASE A: (The Things Stack v3)\n    if (typeof decodeUplink === 'function') {\n        try {\n            const input = {\n                bytes: bytes,\n                fPort: port\n            };\n            var result = decodeUplink(input);\n            \n            if (result.data) return result.data;\n\n            return result; \n        } catch (e) {\n            console.error(\"Error inside decodeUplink:\", e);\n            throw e;\n        }\n    }\n\n    // CASE B: Legacy TTN (v2)\n    else if (typeof Decoder === 'function') {\n        try {\n            return Decoder(bytes, port);\n        } catch (e) {\n            console.error(\"Error inside Decoder:\", e);\n            throw e;\n        }\n    }\n\n    // CASE C: No decoder found\n    else {\n        throw new Error(\"No compatible TTN decoder function (decodeUplink or Decoder) found in scope.\");\n    }\n}\n\n\n// TTN decoder\nconst reg2obisMapping = {\n  \"1\": \"1.8.1\",\n  \"2\": \"2.8.1\",\n  \"3\": \"3.8.1\",\n  \"4\": \"4.8.1\",\n  \"5\": \"1.8.2\",\n  \"6\": \"2.8.2\",\n  \"7\": \"3.8.2\",\n  \"8\": \"4.8.2\",\n  \"9\": \"1.7.0\",\n  \"10\": \"3.7.0\",\n  \"11\": \"9.7.0\",\n  \"12\": \"14.7.0\",\n  \"13\": \"13.7.0\",\n  \"14\": \"T1 Wirk Energie Zähler Import\",\n  \"15\": \"21.7.0\",\n  \"16\": \"23.7.0\",\n  \"17\": \"29.7.0\",\n  \"18\": \"32.7.0\",\n  \"19\": \"31.7.0\",\n  \"20\": \"33.7.0\",\n  \"21\": \"T1 Wirk Energie Zähler Export\",\n  \"22\": \"T1 Blind Energie Zähler Import\",\n  \"23\": \"41.7.0\",\n  \"24\": \"43.7.0\",\n  \"25\": \"49.7.0\",\n  \"26\": \"52.7.0\",\n  \"27\": \"51.7.0\",\n  \"28\": \"53.7.0\",\n  \"29\": \"T1 Blind Energie Zähler Export\",\n  \"30\": \"T2 Wirk Energie Zähler Import\",\n  \"31\": \"61.7.0\",\n  \"32\": \"63.7.0\",\n  \"33\": \"69.7.0\",\n  \"34\": \"72.7.0\",\n  \"35\": \"71.7.0\",\n  \"36\": \"73.7.0\",\n  \"37\": \"T2 Wirk Energie Zähler Export\",\n  \"38\": \"T2 Blind Energie Zähler Import\",\n  \"39\": \"T2 Blind Energie Zähler Export\",\n};\n\nconst reg2obis = (reg_hex) => reg2obisMapping[reg_hex.toString()] || reg_hex.toString();\n\nfunction parseHeaders(bytes) {\n  const result = {};\n  const hex_string = bytes.map(byte => byte.toString(16).padStart(2, '0')).join('');\n\n  // Determine Frame Control\n  result.Fctrl = hex_string.substring(0, 2);\n\n  // Determine Number of Registers\n  result.Number_Registers = parseInt(hex_string.substring(2, 4), 16) - 2;\n\n  // Determine Control Array Input\n  const expectedLength = 2 + 2 + 2 * result.Number_Registers + 8 + 6;\n  if (hex_string.length >= expectedLength) {\n      result.Control_Array = hex_string.substring(4, 4 + 2 * result.Number_Registers);\n  } else {\n      return {};\n  }\n\n  return result;\n}\n\nfunction padLeadingZeros(num, size) {\nvar s = num + \"\";\nwhile (s.length < size) s = \"0\" + s;\nreturn s;\n}\n\nfunction get_registers(bytes, header) {\n  var hex_string = bytes.map(byte => byte.toString(16).padStart(2, '0')).join('').toUpperCase();\n\n  var current_frame_ptr = 12;\n\n  //modular size\n  current_frame_ptr = 4 + 2 * parseInt(header.Number_Registers, 16); //fctl 2 + register 2 + Control_Array\n\n  //Check for sufficient data\n  if (hex_string.length >= 10 + 2 * (parseInt(header.Number_Registers, 16) - 1)) {\n      serial_nr = hex_string.substring(current_frame_ptr, current_frame_ptr + 8);\n      current_frame_ptr += 8;\n\n      current_frame_ptr += 6;\n  } else {\n      return {};\n  }\n\n  var range = parseInt(header.Number_Registers, 16);\n  var measures = {};\n  var _ctl, _endpointstr, _value, _reg;\n\n  for (let i = 1; i <= range; i++) {\n      _ctl = \"\";\n      _endpointstr = \"\";\n\n      _endpointstr = reg2obis(parseInt(header.Control_Array.substring((i - 1) * 2, i * 2), 16).toString(10));\n\n      _value = hex_string.substring(current_frame_ptr, current_frame_ptr + 8);\n      _reg = parseInt(_value, 16).toString(10);\n\n      measures[_endpointstr] = _reg;\n      current_frame_ptr += 8;\n  }\n\n  return measures;\n}\n\n\nfunction decodeUplink(input) {\n//Read Codec Header from Message\nvar header = parseHeaders(input.bytes);\n\nif (Object.keys(header).length === 0 && header.constructor === Object) {\n  return {\n    errors: [\n      \"IIoT Box Decoder: Header decoder returned empty header, stop decoding message\",\n    ],\n  };\n}\n\nreturn {\n  data: get_registers(input.bytes, header),\n};\n}",
-            "environment": "javascript",
-            "storage": "",
-            "version": "1.0"
-          },
-          "properties": {
-            "uplink": {
-              "data": {
-                "payload": "{{payload}}",
-                "payload_function": "",
-                "payload_type": "source_payload",
-                "resource": "uplink",
-                "source": "resource",
-                "update": "events"
-              },
-              "default": {
-                "source": "value"
-              },
-              "enabled": true
-            }
-          }
-        },
-        "_resources": {
-          "properties": [
+        "description": "Direct measuring digital three-phase meter for DIN rail mounting",
+        "image": "assets/sinus85.png",
+        "category": "devices",
+        "vendor": "tip"
+    },
+    "resources": {
+        "products": [
             {
-              "property": "dashboard",
-              "value": {
-                "tabs": [
-                  {
-                    "name": "Energy Overview",
-                    "widgets": [
-                      {
-                        "layout": {
-                          "col": 0,
-                          "row": 0,
-                          "sizeX": 2,
-                          "sizeY": 6
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "Total Active Energy Import (1.8.0)"
-                        },
-                        "properties": {
-                          "color": "#1abc9c",
-                          "unit": "Wh"
-                        },
-                        "sources": [
-                          {
-                            "bucket": {
-                              "backend": "influxdb",
-                              "id": "tip_sinus85_data",
-                              "mapping": "1.7.0",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
+                "description": "Direct measuring digital three-phase meter for DIN rail mounting",
+                "enabled": true,
+                "name": "Tip SINUS85",
+                "product": "tip_sinus85",
+                "profile": {
+                    "api": {
+                        "downlink": {
+                            "enabled": true,
+                            "handle_connectivity": false,
+                            "request": {
+                                "data": {
+                                    "path": "/downlink",
+                                    "payload": "{\n    \"data\"    : \"{{payload.data=\"\"}}\",\n    \"port\"    :  {{payload.port=85}},\n    \"priority\":  {{payload.priority=3}},\n    \"confirmed\" :  {{payload.confirmed=false}},\n    \"uplink\"  :  {{property.uplink}} \n}",
+                                    "payload_function": "",
+                                    "payload_type": "",
+                                    "plugin": "{{property.uplink.source}}",
+                                    "target": "plugin_endpoint"
+                                }
                             },
-                            "color": "#1abc9c",
-                            "name": "Active Power",
-                            "source": "bucket",
-                            "timespan": {
-                              "mode": "latest"
+                            "response": {
+                                "data": {}
                             }
-                          }
-                        ],
-                        "type": "donutchart"
-                      },
-                      {
-                        "layout": {
-                          "col": 2,
-                          "row": 0,
-                          "sizeX": 2,
-                          "sizeY": 6
                         },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "Reactive Energy Import (3.8.0)"
-                        },
-                        "properties": {
-                          "color": "#3498db",
-                          "unit": "VArh"
-                        },
-                        "sources": [
-                          {
-                            "bucket": {
-                              "backend": "influxdb",
-                              "id": "tip_sinus85_data",
-                              "mapping": "3.7.0",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
+                        "uplink": {
+                            "device_id_resolver": "getId",
+                            "enabled": true,
+                            "handle_connectivity": true,
+                            "request": {
+                                "data": {
+                                    "payload": "{{payload}}",
+                                    "payload_function": "",
+                                    "payload_type": "source_payload",
+                                    "resource_stream": "uplink",
+                                    "target": "resource_stream"
+                                }
                             },
-                            "color": "#3498db",
-                            "name": "Reactive Power",
-                            "source": "bucket",
-                            "timespan": {
-                              "mode": "latest"
+                            "response": {
+                                "data": {}
                             }
-                          }
-                        ],
-                        "type": "donutchart"
-                      },
-                      {
-                        "layout": {
-                          "col": 4,
-                          "row": 0,
-                          "sizeX": 2,
-                          "sizeY": 6
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "Apparent Energy (9.8.0)"
-                        },
-                        "properties": {
-                          "color": "#9b59b6",
-                          "unit": "VAh"
-                        },
-                        "sources": [
-                          {
-                            "bucket": {
-                              "backend": "influxdb",
-                              "id": "tip_sinus85_data",
-                              "mapping": "9.7.0",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
+                        }
+                    },
+                    "autoprovisions": {
+                        "device_autoprovisioning": {
+                            "config": {
+                                "mode": "pattern",
+                                "pattern": "sinus85-.*"
                             },
-                            "color": "#9b59b6",
-                            "name": "Apparent Power",
-                            "source": "bucket",
-                            "timespan": {
-                              "mode": "latest"
-                            }
-                          }
-                        ],
-                        "type": "donutchart"
-                      },
-                      {
-                        "layout": {
-                          "col": 0,
-                          "row": 6,
-                          "sizeX": 6,
-                          "sizeY": 10
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "Active Power History (L1, L2, L3)"
-                        },
-                        "properties": {
-                          "axis": true,
-                          "fill": false,
-                          "legend": true,
-                          "multiple_axes": false
-                        },
-                        "sources": [
-                          {
-                            "bucket": {
-                              "backend": "influxdb",
-                              "id": "tip_sinus85_data",
-                              "mapping": "21.7.0",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
+                            "enabled": true
+                        }
+                    },
+                    "buckets": {
+                        "tip_sinus85_data": {
+                            "backend": "influxdb",
+                            "data": {
+                                "payload": "{{payload}}",
+                                "payload_function": "decodeThingerUplink",
+                                "payload_type": "source_payload",
+                                "resource": "uplink",
+                                "source": "resource",
+                                "update": "events"
                             },
-                            "color": "#e74c3c",
-                            "name": "L1 Active Power",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
-                            }
-                          },
-                          {
-                            "bucket": {
-                              "backend": "influxdb",
-                              "id": "tip_sinus85_data",
-                              "mapping": "23.7.0",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
+                            "enabled": true,
+                            "retention": {
+                                "period": 12,
+                                "unit": "months"
                             },
-                            "color": "#f39c12",
-                            "name": "L2 Active Power",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
-                            }
-                          },
-                          {
-                            "bucket": {
-                              "backend": "influxdb",
-                              "id": "tip_sinus85_data",
-                              "mapping": "41.7.0",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
+                            "tags": [
+                                "energy",
+                                "three_phase"
+                            ]
+                        }
+                    },
+                    "code": {
+                        "code": "function decodeThingerUplink(thingerData) {\n    // 0. If data has already been decoded, we will return it\n    if (thingerData.decodedPayload) return thingerData.decodedPayload;\n    \n    // 1. Extract and Validate Input\n    // We need 'payload' (hex string) and 'fPort' (integer)\n    const hexPayload = thingerData.payload || \"\";\n    const port = thingerData.fPort || 1;\n\n    // 2. Convert Hex String to Byte Array\n    const bytes = [];\n    for (let i = 0; i < hexPayload.length; i += 2) {\n        bytes.push(parseInt(hexPayload.substr(i, 2), 16));\n    }\n\n    // 3. Dynamic Function Detection and Execution\n    \n    // CASE A: (The Things Stack v3)\n    if (typeof decodeUplink === 'function') {\n        try {\n            const input = {\n                bytes: bytes,\n                fPort: port\n            };\n            var result = decodeUplink(input);\n            \n            if (result.data) return result.data;\n\n            return result; \n        } catch (e) {\n            console.error(\"Error inside decodeUplink:\", e);\n            throw e;\n        }\n    }\n\n    // CASE B: Legacy TTN (v2)\n    else if (typeof Decoder === 'function') {\n        try {\n            return Decoder(bytes, port);\n        } catch (e) {\n            console.error(\"Error inside Decoder:\", e);\n            throw e;\n        }\n    }\n\n    // CASE C: No decoder found\n    else {\n        throw new Error(\"No compatible TTN decoder function (decodeUplink or Decoder) found in scope.\");\n    }\n}\n\n\n// TTN decoder\nconst reg2obisMapping = {\n  \"1\": \"1.8.1\",\n  \"2\": \"2.8.1\",\n  \"3\": \"3.8.1\",\n  \"4\": \"4.8.1\",\n  \"5\": \"1.8.2\",\n  \"6\": \"2.8.2\",\n  \"7\": \"3.8.2\",\n  \"8\": \"4.8.2\",\n  \"9\": \"1.7.0\",\n  \"10\": \"3.7.0\",\n  \"11\": \"9.7.0\",\n  \"12\": \"14.7.0\",\n  \"13\": \"13.7.0\",\n  \"14\": \"T1 Wirk Energie Zähler Import\",\n  \"15\": \"21.7.0\",\n  \"16\": \"23.7.0\",\n  \"17\": \"29.7.0\",\n  \"18\": \"32.7.0\",\n  \"19\": \"31.7.0\",\n  \"20\": \"33.7.0\",\n  \"21\": \"T1 Wirk Energie Zähler Export\",\n  \"22\": \"T1 Blind Energie Zähler Import\",\n  \"23\": \"41.7.0\",\n  \"24\": \"43.7.0\",\n  \"25\": \"49.7.0\",\n  \"26\": \"52.7.0\",\n  \"27\": \"51.7.0\",\n  \"28\": \"53.7.0\",\n  \"29\": \"T1 Blind Energie Zähler Export\",\n  \"30\": \"T2 Wirk Energie Zähler Import\",\n  \"31\": \"61.7.0\",\n  \"32\": \"63.7.0\",\n  \"33\": \"69.7.0\",\n  \"34\": \"72.7.0\",\n  \"35\": \"71.7.0\",\n  \"36\": \"73.7.0\",\n  \"37\": \"T2 Wirk Energie Zähler Export\",\n  \"38\": \"T2 Blind Energie Zähler Import\",\n  \"39\": \"T2 Blind Energie Zähler Export\",\n};\n\nconst reg2obis = (reg_hex) => reg2obisMapping[reg_hex.toString()] || reg_hex.toString();\n\nfunction parseHeaders(bytes) {\n  const result = {};\n  const hex_string = bytes.map(byte => byte.toString(16).padStart(2, '0')).join('');\n\n  // Determine Frame Control\n  result.Fctrl = hex_string.substring(0, 2);\n\n  // Determine Number of Registers\n  result.Number_Registers = parseInt(hex_string.substring(2, 4), 16) - 2;\n\n  // Determine Control Array Input\n  const expectedLength = 2 + 2 + 2 * result.Number_Registers + 8 + 6;\n  if (hex_string.length >= expectedLength) {\n      result.Control_Array = hex_string.substring(4, 4 + 2 * result.Number_Registers);\n  } else {\n      return {};\n  }\n\n  return result;\n}\n\nfunction padLeadingZeros(num, size) {\nvar s = num + \"\";\nwhile (s.length < size) s = \"0\" + s;\nreturn s;\n}\n\nfunction get_registers(bytes, header) {\n  var hex_string = bytes.map(byte => byte.toString(16).padStart(2, '0')).join('').toUpperCase();\n\n  var current_frame_ptr = 12;\n\n  //modular size\n  current_frame_ptr = 4 + 2 * parseInt(header.Number_Registers, 16); //fctl 2 + register 2 + Control_Array\n\n  //Check for sufficient data\n  if (hex_string.length >= 10 + 2 * (parseInt(header.Number_Registers, 16) - 1)) {\n      serial_nr = hex_string.substring(current_frame_ptr, current_frame_ptr + 8);\n      current_frame_ptr += 8;\n\n      current_frame_ptr += 6;\n  } else {\n      return {};\n  }\n\n  var range = parseInt(header.Number_Registers, 16);\n  var measures = {};\n  var _ctl, _endpointstr, _value, _reg;\n\n  for (let i = 1; i <= range; i++) {\n      _ctl = \"\";\n      _endpointstr = \"\";\n\n      _endpointstr = reg2obis(parseInt(header.Control_Array.substring((i - 1) * 2, i * 2), 16).toString(10));\n\n      _value = hex_string.substring(current_frame_ptr, current_frame_ptr + 8);\n      _reg = parseInt(_value, 16).toString(10);\n\n      measures[_endpointstr] = _reg;\n      current_frame_ptr += 8;\n  }\n\n  return measures;\n}\n\n\nfunction decodeUplink(input) {\n//Read Codec Header from Message\nvar header = parseHeaders(input.bytes);\n\nif (Object.keys(header).length === 0 && header.constructor === Object) {\n  return {\n    errors: [\n      \"IIoT Box Decoder: Header decoder returned empty header, stop decoding message\",\n    ],\n  };\n}\n\nreturn {\n  data: get_registers(input.bytes, header),\n};\n}",
+                        "environment": "javascript",
+                        "storage": "",
+                        "version": "1.0"
+                    },
+                    "properties": {
+                        "uplink": {
+                            "data": {
+                                "payload": "{{payload}}",
+                                "payload_function": "",
+                                "payload_type": "source_payload",
+                                "resource": "uplink",
+                                "source": "resource",
+                                "update": "events"
                             },
-                            "color": "#3498db",
-                            "name": "L3 Active Power",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
-                            }
-                          }
-                        ],
-                        "type": "chart"
-                      },
-                      {
-                        "layout": {
-                          "col": 0,
-                          "row": 16,
-                          "sizeX": 6,
-                          "sizeY": 10
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "Total Power (Active, Reactive, Apparent)"
-                        },
-                        "properties": {
-                          "axis": true,
-                          "fill": false,
-                          "legend": true,
-                          "multiple_axes": false
-                        },
-                        "sources": [
-                          {
-                            "bucket": {
-                              "backend": "influxdb",
-                              "id": "tip_sinus85_data",
-                              "mapping": "1.7.0",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
+                            "default": {
+                                "source": "value"
                             },
-                            "color": "#1abc9c",
-                            "name": "Active Power Total",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
+                            "enabled": true
+                        }
+                    }
+                },
+                "_resources": {
+                    "properties": [
+                        {
+                            "property": "dashboard",
+                            "value": {
+                                "tabs": [
+                                    {
+                                        "name": "Energy Overview",
+                                        "widgets": [
+                                            {
+                                                "layout": {
+                                                    "col": 0,
+                                                    "row": 0,
+                                                    "sizeX": 2,
+                                                    "sizeY": 6
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "Total Active Energy Import (1.8.0)"
+                                                },
+                                                "properties": {
+                                                    "color": "#1abc9c",
+                                                    "unit": "Wh"
+                                                },
+                                                "sources": [
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "influxdb",
+                                                            "id": "tip_sinus85_data",
+                                                            "mapping": "1.7.0",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#1abc9c",
+                                                        "name": "Active Power",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "mode": "latest"
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "donutchart"
+                                            },
+                                            {
+                                                "layout": {
+                                                    "col": 2,
+                                                    "row": 0,
+                                                    "sizeX": 2,
+                                                    "sizeY": 6
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "Reactive Energy Import (3.8.0)"
+                                                },
+                                                "properties": {
+                                                    "color": "#3498db",
+                                                    "unit": "VArh"
+                                                },
+                                                "sources": [
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "influxdb",
+                                                            "id": "tip_sinus85_data",
+                                                            "mapping": "3.7.0",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#3498db",
+                                                        "name": "Reactive Power",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "mode": "latest"
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "donutchart"
+                                            },
+                                            {
+                                                "layout": {
+                                                    "col": 4,
+                                                    "row": 0,
+                                                    "sizeX": 2,
+                                                    "sizeY": 6
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "Apparent Energy (9.8.0)"
+                                                },
+                                                "properties": {
+                                                    "color": "#9b59b6",
+                                                    "unit": "VAh"
+                                                },
+                                                "sources": [
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "influxdb",
+                                                            "id": "tip_sinus85_data",
+                                                            "mapping": "9.7.0",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#9b59b6",
+                                                        "name": "Apparent Power",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "mode": "latest"
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "donutchart"
+                                            },
+                                            {
+                                                "layout": {
+                                                    "col": 0,
+                                                    "row": 6,
+                                                    "sizeX": 6,
+                                                    "sizeY": 10
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "Active Power History (L1, L2, L3)"
+                                                },
+                                                "properties": {
+                                                    "axis": true,
+                                                    "fill": false,
+                                                    "legend": true,
+                                                    "multiple_axes": false
+                                                },
+                                                "sources": [
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "influxdb",
+                                                            "id": "tip_sinus85_data",
+                                                            "mapping": "21.7.0",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#e74c3c",
+                                                        "name": "L1 Active Power",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "magnitude": "hour",
+                                                            "mode": "relative",
+                                                            "period": "latest",
+                                                            "value": 24
+                                                        }
+                                                    },
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "influxdb",
+                                                            "id": "tip_sinus85_data",
+                                                            "mapping": "23.7.0",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#f39c12",
+                                                        "name": "L2 Active Power",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "magnitude": "hour",
+                                                            "mode": "relative",
+                                                            "period": "latest",
+                                                            "value": 24
+                                                        }
+                                                    },
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "influxdb",
+                                                            "id": "tip_sinus85_data",
+                                                            "mapping": "41.7.0",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#3498db",
+                                                        "name": "L3 Active Power",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "magnitude": "hour",
+                                                            "mode": "relative",
+                                                            "period": "latest",
+                                                            "value": 24
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "chart"
+                                            },
+                                            {
+                                                "layout": {
+                                                    "col": 0,
+                                                    "row": 16,
+                                                    "sizeX": 6,
+                                                    "sizeY": 10
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "Total Power (Active, Reactive, Apparent)"
+                                                },
+                                                "properties": {
+                                                    "axis": true,
+                                                    "fill": false,
+                                                    "legend": true,
+                                                    "multiple_axes": false
+                                                },
+                                                "sources": [
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "influxdb",
+                                                            "id": "tip_sinus85_data",
+                                                            "mapping": "1.7.0",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#1abc9c",
+                                                        "name": "Active Power Total",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "magnitude": "hour",
+                                                            "mode": "relative",
+                                                            "period": "latest",
+                                                            "value": 24
+                                                        }
+                                                    },
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "influxdb",
+                                                            "id": "tip_sinus85_data",
+                                                            "mapping": "3.7.0",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#3498db",
+                                                        "name": "Reactive Power Total",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "magnitude": "hour",
+                                                            "mode": "relative",
+                                                            "period": "latest",
+                                                            "value": 24
+                                                        }
+                                                    },
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "influxdb",
+                                                            "id": "tip_sinus85_data",
+                                                            "mapping": "9.7.0",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#9b59b6",
+                                                        "name": "Apparent Power Total",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "magnitude": "hour",
+                                                            "mode": "relative",
+                                                            "period": "latest",
+                                                            "value": 24
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "chart"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Voltage & Current",
+                                        "widgets": [
+                                            {
+                                                "layout": {
+                                                    "col": 0,
+                                                    "row": 0,
+                                                    "sizeX": 2,
+                                                    "sizeY": 6
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "L1 Voltage (32.7.0)"
+                                                },
+                                                "properties": {
+                                                    "color": "#e74c3c",
+                                                    "max": 250,
+                                                    "min": 0,
+                                                    "unit": "V"
+                                                },
+                                                "sources": [
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "influxdb",
+                                                            "id": "tip_sinus85_data",
+                                                            "mapping": "32.7.0",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#e74c3c",
+                                                        "name": "L1 Voltage",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "mode": "latest"
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "donutchart"
+                                            },
+                                            {
+                                                "layout": {
+                                                    "col": 2,
+                                                    "row": 0,
+                                                    "sizeX": 2,
+                                                    "sizeY": 6
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "L2 Voltage (52.7.0)"
+                                                },
+                                                "properties": {
+                                                    "color": "#f39c12",
+                                                    "max": 250,
+                                                    "min": 0,
+                                                    "unit": "V"
+                                                },
+                                                "sources": [
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "influxdb",
+                                                            "id": "tip_sinus85_data",
+                                                            "mapping": "52.7.0",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#f39c12",
+                                                        "name": "L2 Voltage",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "mode": "latest"
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "donutchart"
+                                            },
+                                            {
+                                                "layout": {
+                                                    "col": 4,
+                                                    "row": 0,
+                                                    "sizeX": 2,
+                                                    "sizeY": 6
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "L3 Voltage (72.7.0)"
+                                                },
+                                                "properties": {
+                                                    "color": "#3498db",
+                                                    "max": 250,
+                                                    "min": 0,
+                                                    "unit": "V"
+                                                },
+                                                "sources": [
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "influxdb",
+                                                            "id": "tip_sinus85_data",
+                                                            "mapping": "72.7.0",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#3498db",
+                                                        "name": "L3 Voltage",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "mode": "latest"
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "donutchart"
+                                            },
+                                            {
+                                                "layout": {
+                                                    "col": 0,
+                                                    "row": 6,
+                                                    "sizeX": 2,
+                                                    "sizeY": 6
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "L1 Current (31.7.0)"
+                                                },
+                                                "properties": {
+                                                    "color": "#e74c3c",
+                                                    "unit": "A"
+                                                },
+                                                "sources": [
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "influxdb",
+                                                            "id": "tip_sinus85_data",
+                                                            "mapping": "31.7.0",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#e74c3c",
+                                                        "name": "L1 Current",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "mode": "latest"
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "donutchart"
+                                            },
+                                            {
+                                                "layout": {
+                                                    "col": 2,
+                                                    "row": 6,
+                                                    "sizeX": 2,
+                                                    "sizeY": 6
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "L2 Current (51.7.0)"
+                                                },
+                                                "properties": {
+                                                    "color": "#f39c12",
+                                                    "unit": "A"
+                                                },
+                                                "sources": [
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "influxdb",
+                                                            "id": "tip_sinus85_data",
+                                                            "mapping": "51.7.0",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#f39c12",
+                                                        "name": "L2 Current",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "mode": "latest"
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "donutchart"
+                                            },
+                                            {
+                                                "layout": {
+                                                    "col": 4,
+                                                    "row": 6,
+                                                    "sizeX": 2,
+                                                    "sizeY": 6
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "L3 Current (71.7.0)"
+                                                },
+                                                "properties": {
+                                                    "color": "#3498db",
+                                                    "unit": "A"
+                                                },
+                                                "sources": [
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "influxdb",
+                                                            "id": "tip_sinus85_data",
+                                                            "mapping": "71.7.0",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#3498db",
+                                                        "name": "L3 Current",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "mode": "latest"
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "donutchart"
+                                            },
+                                            {
+                                                "layout": {
+                                                    "col": 0,
+                                                    "row": 12,
+                                                    "sizeX": 6,
+                                                    "sizeY": 10
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "Voltage History (L1, L2, L3)"
+                                                },
+                                                "properties": {
+                                                    "axis": true,
+                                                    "fill": false,
+                                                    "legend": true,
+                                                    "multiple_axes": false
+                                                },
+                                                "sources": [
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "influxdb",
+                                                            "id": "tip_sinus85_data",
+                                                            "mapping": "32.7.0",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#e74c3c",
+                                                        "name": "L1 Voltage",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "magnitude": "hour",
+                                                            "mode": "relative",
+                                                            "period": "latest",
+                                                            "value": 24
+                                                        }
+                                                    },
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "influxdb",
+                                                            "id": "tip_sinus85_data",
+                                                            "mapping": "52.7.0",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#f39c12",
+                                                        "name": "L2 Voltage",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "magnitude": "hour",
+                                                            "mode": "relative",
+                                                            "period": "latest",
+                                                            "value": 24
+                                                        }
+                                                    },
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "influxdb",
+                                                            "id": "tip_sinus85_data",
+                                                            "mapping": "72.7.0",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#3498db",
+                                                        "name": "L3 Voltage",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "magnitude": "hour",
+                                                            "mode": "relative",
+                                                            "period": "latest",
+                                                            "value": 24
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "chart"
+                                            },
+                                            {
+                                                "layout": {
+                                                    "col": 0,
+                                                    "row": 22,
+                                                    "sizeX": 6,
+                                                    "sizeY": 10
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "Current History (L1, L2, L3)"
+                                                },
+                                                "properties": {
+                                                    "axis": true,
+                                                    "fill": false,
+                                                    "legend": true,
+                                                    "multiple_axes": false
+                                                },
+                                                "sources": [
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "influxdb",
+                                                            "id": "tip_sinus85_data",
+                                                            "mapping": "31.7.0",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#e74c3c",
+                                                        "name": "L1 Current",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "magnitude": "hour",
+                                                            "mode": "relative",
+                                                            "period": "latest",
+                                                            "value": 24
+                                                        }
+                                                    },
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "influxdb",
+                                                            "id": "tip_sinus85_data",
+                                                            "mapping": "51.7.0",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#f39c12",
+                                                        "name": "L2 Current",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "magnitude": "hour",
+                                                            "mode": "relative",
+                                                            "period": "latest",
+                                                            "value": 24
+                                                        }
+                                                    },
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "influxdb",
+                                                            "id": "tip_sinus85_data",
+                                                            "mapping": "71.7.0",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#3498db",
+                                                        "name": "L3 Current",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "magnitude": "hour",
+                                                            "mode": "relative",
+                                                            "period": "latest",
+                                                            "value": 24
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "chart"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Energy Details",
+                                        "widgets": [
+                                            {
+                                                "layout": {
+                                                    "col": 0,
+                                                    "row": 0,
+                                                    "sizeX": 6,
+                                                    "sizeY": 18
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "Latest Measurements"
+                                                },
+                                                "properties": {
+                                                    "source": "code",
+                                                    "template": "<div style=\"width:100%; height:100%; overflow-y:auto\">\n  <table class=\"table table-striped table-condensed\">\n    <thead>\n      <tr>\n        <th>Timestamp</th>\n        <th>Active Power (W)</th>\n        <th>Reactive Power (VAr)</th>\n        <th>L1 Voltage (V)</th>\n        <th>L2 Voltage (V)</th>\n        <th>L3 Voltage (V)</th>\n        <th>L1 Current (A)</th>\n        <th>L2 Current (A)</th>\n        <th>L3 Current (A)</th>\n      </tr>\n    </thead>\n    <tbody>\n      <tr ng-repeat=\"entry in value\">\n        <td>{{ entry.ts | date:'medium' }}</td>\n        <td>{{ entry['1.7.0'] || '—' }}</td>\n        <td>{{ entry['3.7.0'] || '—' }}</td>\n        <td>{{ entry['32.7.0'] || '—' }}</td>\n        <td>{{ entry['52.7.0'] || '—' }}</td>\n        <td>{{ entry['72.7.0'] || '—' }}</td>\n        <td>{{ entry['31.7.0'] || '—' }}</td>\n        <td>{{ entry['51.7.0'] || '—' }}</td>\n        <td>{{ entry['71.7.0'] || '—' }}</td>\n      </tr>\n    </tbody>\n  </table>\n</div>\n"
+                                                },
+                                                "sources": [
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "influxdb",
+                                                            "id": "tip_sinus85_data",
+                                                            "mapping": "ts",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#1abc9c",
+                                                        "name": "ts",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "magnitude": "hour",
+                                                            "mode": "relative",
+                                                            "period": "latest",
+                                                            "value": 24
+                                                        }
+                                                    },
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "influxdb",
+                                                            "id": "tip_sinus85_data",
+                                                            "mapping": "1.7.0",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#1abc9c",
+                                                        "name": "active_power",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "magnitude": "hour",
+                                                            "mode": "relative",
+                                                            "period": "latest",
+                                                            "value": 24
+                                                        }
+                                                    },
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "influxdb",
+                                                            "id": "tip_sinus85_data",
+                                                            "mapping": "3.7.0",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#3498db",
+                                                        "name": "reactive_power",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "magnitude": "hour",
+                                                            "mode": "relative",
+                                                            "period": "latest",
+                                                            "value": 24
+                                                        }
+                                                    },
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "influxdb",
+                                                            "id": "tip_sinus85_data",
+                                                            "mapping": "32.7.0",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#e74c3c",
+                                                        "name": "l1_voltage",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "magnitude": "hour",
+                                                            "mode": "relative",
+                                                            "period": "latest",
+                                                            "value": 24
+                                                        }
+                                                    },
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "influxdb",
+                                                            "id": "tip_sinus85_data",
+                                                            "mapping": "52.7.0",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#f39c12",
+                                                        "name": "l2_voltage",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "magnitude": "hour",
+                                                            "mode": "relative",
+                                                            "period": "latest",
+                                                            "value": 24
+                                                        }
+                                                    },
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "influxdb",
+                                                            "id": "tip_sinus85_data",
+                                                            "mapping": "72.7.0",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#3498db",
+                                                        "name": "l3_voltage",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "magnitude": "hour",
+                                                            "mode": "relative",
+                                                            "period": "latest",
+                                                            "value": 24
+                                                        }
+                                                    },
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "influxdb",
+                                                            "id": "tip_sinus85_data",
+                                                            "mapping": "31.7.0",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#e74c3c",
+                                                        "name": "l1_current",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "magnitude": "hour",
+                                                            "mode": "relative",
+                                                            "period": "latest",
+                                                            "value": 24
+                                                        }
+                                                    },
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "influxdb",
+                                                            "id": "tip_sinus85_data",
+                                                            "mapping": "51.7.0",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#f39c12",
+                                                        "name": "l2_current",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "magnitude": "hour",
+                                                            "mode": "relative",
+                                                            "period": "latest",
+                                                            "value": 24
+                                                        }
+                                                    },
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "influxdb",
+                                                            "id": "tip_sinus85_data",
+                                                            "mapping": "71.7.0",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#3498db",
+                                                        "name": "l3_current",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "magnitude": "hour",
+                                                            "mode": "relative",
+                                                            "period": "latest",
+                                                            "value": 24
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "html_time"
+                                            }
+                                        ]
+                                    }
+                                ]
                             }
-                          },
-                          {
-                            "bucket": {
-                              "backend": "influxdb",
-                              "id": "tip_sinus85_data",
-                              "mapping": "3.7.0",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#3498db",
-                            "name": "Reactive Power Total",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
-                            }
-                          },
-                          {
-                            "bucket": {
-                              "backend": "influxdb",
-                              "id": "tip_sinus85_data",
-                              "mapping": "9.7.0",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#9b59b6",
-                            "name": "Apparent Power Total",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
-                            }
-                          }
-                        ],
-                        "type": "chart"
-                      }
+                        }
                     ]
-                  },
-                  {
-                    "name": "Voltage & Current",
-                    "widgets": [
-                      {
-                        "layout": {
-                          "col": 0,
-                          "row": 0,
-                          "sizeX": 2,
-                          "sizeY": 6
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "L1 Voltage (32.7.0)"
-                        },
-                        "properties": {
-                          "color": "#e74c3c",
-                          "max": 250,
-                          "min": 0,
-                          "unit": "V"
-                        },
-                        "sources": [
-                          {
-                            "bucket": {
-                              "backend": "influxdb",
-                              "id": "tip_sinus85_data",
-                              "mapping": "32.7.0",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#e74c3c",
-                            "name": "L1 Voltage",
-                            "source": "bucket",
-                            "timespan": {
-                              "mode": "latest"
-                            }
-                          }
-                        ],
-                        "type": "donutchart"
-                      },
-                      {
-                        "layout": {
-                          "col": 2,
-                          "row": 0,
-                          "sizeX": 2,
-                          "sizeY": 6
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "L2 Voltage (52.7.0)"
-                        },
-                        "properties": {
-                          "color": "#f39c12",
-                          "max": 250,
-                          "min": 0,
-                          "unit": "V"
-                        },
-                        "sources": [
-                          {
-                            "bucket": {
-                              "backend": "influxdb",
-                              "id": "tip_sinus85_data",
-                              "mapping": "52.7.0",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#f39c12",
-                            "name": "L2 Voltage",
-                            "source": "bucket",
-                            "timespan": {
-                              "mode": "latest"
-                            }
-                          }
-                        ],
-                        "type": "donutchart"
-                      },
-                      {
-                        "layout": {
-                          "col": 4,
-                          "row": 0,
-                          "sizeX": 2,
-                          "sizeY": 6
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "L3 Voltage (72.7.0)"
-                        },
-                        "properties": {
-                          "color": "#3498db",
-                          "max": 250,
-                          "min": 0,
-                          "unit": "V"
-                        },
-                        "sources": [
-                          {
-                            "bucket": {
-                              "backend": "influxdb",
-                              "id": "tip_sinus85_data",
-                              "mapping": "72.7.0",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#3498db",
-                            "name": "L3 Voltage",
-                            "source": "bucket",
-                            "timespan": {
-                              "mode": "latest"
-                            }
-                          }
-                        ],
-                        "type": "donutchart"
-                      },
-                      {
-                        "layout": {
-                          "col": 0,
-                          "row": 6,
-                          "sizeX": 2,
-                          "sizeY": 6
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "L1 Current (31.7.0)"
-                        },
-                        "properties": {
-                          "color": "#e74c3c",
-                          "unit": "A"
-                        },
-                        "sources": [
-                          {
-                            "bucket": {
-                              "backend": "influxdb",
-                              "id": "tip_sinus85_data",
-                              "mapping": "31.7.0",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#e74c3c",
-                            "name": "L1 Current",
-                            "source": "bucket",
-                            "timespan": {
-                              "mode": "latest"
-                            }
-                          }
-                        ],
-                        "type": "donutchart"
-                      },
-                      {
-                        "layout": {
-                          "col": 2,
-                          "row": 6,
-                          "sizeX": 2,
-                          "sizeY": 6
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "L2 Current (51.7.0)"
-                        },
-                        "properties": {
-                          "color": "#f39c12",
-                          "unit": "A"
-                        },
-                        "sources": [
-                          {
-                            "bucket": {
-                              "backend": "influxdb",
-                              "id": "tip_sinus85_data",
-                              "mapping": "51.7.0",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#f39c12",
-                            "name": "L2 Current",
-                            "source": "bucket",
-                            "timespan": {
-                              "mode": "latest"
-                            }
-                          }
-                        ],
-                        "type": "donutchart"
-                      },
-                      {
-                        "layout": {
-                          "col": 4,
-                          "row": 6,
-                          "sizeX": 2,
-                          "sizeY": 6
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "L3 Current (71.7.0)"
-                        },
-                        "properties": {
-                          "color": "#3498db",
-                          "unit": "A"
-                        },
-                        "sources": [
-                          {
-                            "bucket": {
-                              "backend": "influxdb",
-                              "id": "tip_sinus85_data",
-                              "mapping": "71.7.0",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#3498db",
-                            "name": "L3 Current",
-                            "source": "bucket",
-                            "timespan": {
-                              "mode": "latest"
-                            }
-                          }
-                        ],
-                        "type": "donutchart"
-                      },
-                      {
-                        "layout": {
-                          "col": 0,
-                          "row": 12,
-                          "sizeX": 6,
-                          "sizeY": 10
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "Voltage History (L1, L2, L3)"
-                        },
-                        "properties": {
-                          "axis": true,
-                          "fill": false,
-                          "legend": true,
-                          "multiple_axes": false
-                        },
-                        "sources": [
-                          {
-                            "bucket": {
-                              "backend": "influxdb",
-                              "id": "tip_sinus85_data",
-                              "mapping": "32.7.0",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#e74c3c",
-                            "name": "L1 Voltage",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
-                            }
-                          },
-                          {
-                            "bucket": {
-                              "backend": "influxdb",
-                              "id": "tip_sinus85_data",
-                              "mapping": "52.7.0",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#f39c12",
-                            "name": "L2 Voltage",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
-                            }
-                          },
-                          {
-                            "bucket": {
-                              "backend": "influxdb",
-                              "id": "tip_sinus85_data",
-                              "mapping": "72.7.0",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#3498db",
-                            "name": "L3 Voltage",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
-                            }
-                          }
-                        ],
-                        "type": "chart"
-                      },
-                      {
-                        "layout": {
-                          "col": 0,
-                          "row": 22,
-                          "sizeX": 6,
-                          "sizeY": 10
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "Current History (L1, L2, L3)"
-                        },
-                        "properties": {
-                          "axis": true,
-                          "fill": false,
-                          "legend": true,
-                          "multiple_axes": false
-                        },
-                        "sources": [
-                          {
-                            "bucket": {
-                              "backend": "influxdb",
-                              "id": "tip_sinus85_data",
-                              "mapping": "31.7.0",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#e74c3c",
-                            "name": "L1 Current",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
-                            }
-                          },
-                          {
-                            "bucket": {
-                              "backend": "influxdb",
-                              "id": "tip_sinus85_data",
-                              "mapping": "51.7.0",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#f39c12",
-                            "name": "L2 Current",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
-                            }
-                          },
-                          {
-                            "bucket": {
-                              "backend": "influxdb",
-                              "id": "tip_sinus85_data",
-                              "mapping": "71.7.0",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#3498db",
-                            "name": "L3 Current",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
-                            }
-                          }
-                        ],
-                        "type": "chart"
-                      }
-                    ]
-                  },
-                  {
-                    "name": "Energy Details",
-                    "widgets": [
-                      {
-                        "layout": {
-                          "col": 0,
-                          "row": 0,
-                          "sizeX": 6,
-                          "sizeY": 18
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "Latest Measurements"
-                        },
-                        "properties": {
-                          "source": "code",
-                          "template": "<div style=\"width:100%; height:100%; overflow-y:auto\">\n  <table class=\"table table-striped table-condensed\">\n    <thead>\n      <tr>\n        <th>Timestamp</th>\n        <th>Active Power (W)</th>\n        <th>Reactive Power (VAr)</th>\n        <th>L1 Voltage (V)</th>\n        <th>L2 Voltage (V)</th>\n        <th>L3 Voltage (V)</th>\n        <th>L1 Current (A)</th>\n        <th>L2 Current (A)</th>\n        <th>L3 Current (A)</th>\n      </tr>\n    </thead>\n    <tbody>\n      <tr ng-repeat=\"entry in value\">\n        <td>{{ entry.ts | date:'medium' }}</td>\n        <td>{{ entry['1.7.0'] || '—' }}</td>\n        <td>{{ entry['3.7.0'] || '—' }}</td>\n        <td>{{ entry['32.7.0'] || '—' }}</td>\n        <td>{{ entry['52.7.0'] || '—' }}</td>\n        <td>{{ entry['72.7.0'] || '—' }}</td>\n        <td>{{ entry['31.7.0'] || '—' }}</td>\n        <td>{{ entry['51.7.0'] || '—' }}</td>\n        <td>{{ entry['71.7.0'] || '—' }}</td>\n      </tr>\n    </tbody>\n  </table>\n</div>\n"
-                        },
-                        "sources": [
-                          {
-                            "bucket": {
-                              "backend": "influxdb",
-                              "id": "tip_sinus85_data",
-                              "mapping": "ts",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#1abc9c",
-                            "name": "ts",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
-                            }
-                          },
-                          {
-                            "bucket": {
-                              "backend": "influxdb",
-                              "id": "tip_sinus85_data",
-                              "mapping": "1.7.0",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#1abc9c",
-                            "name": "active_power",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
-                            }
-                          },
-                          {
-                            "bucket": {
-                              "backend": "influxdb",
-                              "id": "tip_sinus85_data",
-                              "mapping": "3.7.0",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#3498db",
-                            "name": "reactive_power",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
-                            }
-                          },
-                          {
-                            "bucket": {
-                              "backend": "influxdb",
-                              "id": "tip_sinus85_data",
-                              "mapping": "32.7.0",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#e74c3c",
-                            "name": "l1_voltage",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
-                            }
-                          },
-                          {
-                            "bucket": {
-                              "backend": "influxdb",
-                              "id": "tip_sinus85_data",
-                              "mapping": "52.7.0",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#f39c12",
-                            "name": "l2_voltage",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
-                            }
-                          },
-                          {
-                            "bucket": {
-                              "backend": "influxdb",
-                              "id": "tip_sinus85_data",
-                              "mapping": "72.7.0",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#3498db",
-                            "name": "l3_voltage",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
-                            }
-                          },
-                          {
-                            "bucket": {
-                              "backend": "influxdb",
-                              "id": "tip_sinus85_data",
-                              "mapping": "31.7.0",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#e74c3c",
-                            "name": "l1_current",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
-                            }
-                          },
-                          {
-                            "bucket": {
-                              "backend": "influxdb",
-                              "id": "tip_sinus85_data",
-                              "mapping": "51.7.0",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#f39c12",
-                            "name": "l2_current",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
-                            }
-                          },
-                          {
-                            "bucket": {
-                              "backend": "influxdb",
-                              "id": "tip_sinus85_data",
-                              "mapping": "71.7.0",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#3498db",
-                            "name": "l3_current",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
-                            }
-                          }
-                        ],
-                        "type": "html_time"
-                      }
-                    ]
-                  }
-                ]
-              }
+                }
             }
-          ]
-        }
-      }
-    ]
-  }
+        ]
+    }
 }
