@@ -1,0 +1,222 @@
+<nz-card [nzTitle]="titleTemplate" nzSize="small" nzType="inner" [nzExtra]="extraTemplate" [nzBodyStyle]="{'padding': 0}">
+  <nz-table
+    #alarmTable
+    [nzData]="alarms"
+    nzSize="small"
+    [nzLoading]="loading"
+    [nzFrontPagination]="false"
+    [nzTotal]="totalItems"
+    [nzPageIndex]="pageIndex"
+    [nzPageSize]="pageSize"
+    [nzShowSizeChanger]="false"
+    (nzPageIndexChange)="onPageChange($event)">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Description</th>
+        <th>ID</th>
+        <th nzWidth="120px">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (alarm of alarmTable.data; track alarm.id) {
+        <tr>
+          <td>
+            <a class="tw-font-medium tw-text-blue-600 hover:tw-underline tw-cursor-pointer"
+               (click)="openDetail(alarm)">
+              <fa-icon [icon]="faBell" class="tw-mr-2 tw-text-gray-400"></fa-icon>
+              {{ alarm.name }}
+            </a>
+          </td>
+          <td class="tw-text-gray-500 tw-text-sm">{{ alarm.description || '—' }}</td>
+          <td class="tw-font-mono tw-text-xs tw-text-gray-400">{{ alarm.id }}</td>
+          <td>
+            <div class="tw-flex tw-gap-1">
+              <button nz-button nzType="text" nzSize="small"
+                nz-tooltip="Edit alarm"
+                (click)="openEdit(alarm)">
+                <fa-icon [icon]="faPenToSquare" class="tw-text-blue-500"></fa-icon>
+              </button>
+              <button nz-button nzType="text" nzSize="small"
+                nz-tooltip="Delete alarm"
+                nz-popconfirm
+                nzPopconfirmTitle="Delete alarm '{{ alarm.name }}'?"
+                nzPopconfirmPlacement="left"
+                [nzOkDanger]="true"
+                nzOkText="Delete"
+                (nzOnConfirm)="deleteAlarm(alarm)">
+                <fa-icon [icon]="faTrash" class="tw-text-red-400"></fa-icon>
+              </button>
+            </div>
+          </td>
+        </tr>
+      }
+    </tbody>
+  </nz-table>
+</nz-card>
+
+<!-- Card title -->
+<ng-template #titleTemplate>
+  <span class="tw-mr-2"><fa-icon [icon]="faBell"></fa-icon></span>
+  <span class="tw-font-bold">Alarm Profiles</span>
+  @if (totalItems > 0) {
+    <span class="tw-ml-2 tw-text-xs tw-text-gray-500 tw-font-normal">{{ totalItems }} total</span>
+  }
+</ng-template>
+
+<!-- Extra controls -->
+<ng-template #extraTemplate>
+  <div class="tw-flex tw-gap-2">
+    <button nz-button nzSize="small" nzType="default"
+      (click)="loadAlarms()" [disabled]="loading"
+      nz-tooltip="Refresh">
+      <fa-icon [icon]="faRotateRight"></fa-icon>
+    </button>
+    <button nz-button nzSize="small" nzType="primary" (click)="openCreate()">
+      <fa-icon [icon]="faPlus" class="tw-mr-1"></fa-icon>New alarm
+    </button>
+  </div>
+</ng-template>
+
+<!-- ══ CREATE / EDIT MODAL ═════════════════════════════════════════════════ -->
+<nz-modal
+  [(nzVisible)]="modalVisible"
+  [nzTitle]="modalTitle"
+  [nzWidth]="760"
+  [nzFooter]="modalFooter"
+  (nzOnCancel)="modalVisible = false">
+  <ng-container *nzModalContent>
+    <form nz-form [formGroup]="form" nzLayout="vertical">
+
+      <!-- Basic info -->
+      <div class="tw-grid tw-grid-cols-2 tw-gap-4">
+        <nz-form-item>
+          <nz-form-label nzRequired>Name</nz-form-label>
+          <nz-form-control nzErrorTip="Name is required">
+            <input nz-input formControlName="name" placeholder="e.g. DEFAULT_ALARM" />
+          </nz-form-control>
+        </nz-form-item>
+        <nz-form-item>
+          <nz-form-label>Description</nz-form-label>
+          <nz-form-control>
+            <input nz-input formControlName="description" placeholder="Optional description" />
+          </nz-form-control>
+        </nz-form-item>
+      </div>
+
+      <nz-divider nzText="Daily thresholds" nzOrientation="left"></nz-divider>
+      <div class="tw-text-xs tw-text-gray-500 tw-mb-3">
+        Values are the quantity limits (bytes for data, seconds for voice, count for SMS) at which the alarm triggers at each percentage of the daily threshold.
+      </div>
+
+      <table class="tw-w-full tw-text-xs tw-mb-4 tw-border-collapse">
+        <thead>
+          <tr class="tw-bg-gray-50">
+            <th class="tw-p-2 tw-border tw-text-left tw-font-semibold">Threshold</th>
+            <th class="tw-p-2 tw-border tw-text-center tw-font-semibold">Data (bytes)</th>
+            <th class="tw-p-2 tw-border tw-text-center tw-font-semibold">Voice (seconds)</th>
+            <th class="tw-p-2 tw-border tw-text-center tw-font-semibold">SMS (count)</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (pct of percentages; track pct) {
+            <tr>
+              <td class="tw-p-2 tw-border tw-font-medium">{{ pct }}%</td>
+              @for (svc of ['Data', 'Voice', 'Sms']; track svc) {
+                <td class="tw-p-1 tw-border">
+                  <nz-input-number
+                    [formControlName]="'daily' + svc + 'Threshold' + pct"
+                    [nzMin]="0"
+                    [nzStep]="1"
+                    nzPlaceHolder="—"
+                    class="tw-w-full">
+                  </nz-input-number>
+                </td>
+              }
+            </tr>
+          }
+        </tbody>
+      </table>
+
+      <nz-divider nzText="Monthly thresholds" nzOrientation="left"></nz-divider>
+      <div class="tw-text-xs tw-text-gray-500 tw-mb-3">
+        Same as daily thresholds but evaluated against monthly consumption totals.
+      </div>
+
+      <table class="tw-w-full tw-text-xs tw-mb-2 tw-border-collapse">
+        <thead>
+          <tr class="tw-bg-gray-50">
+            <th class="tw-p-2 tw-border tw-text-left tw-font-semibold">Threshold</th>
+            <th class="tw-p-2 tw-border tw-text-center tw-font-semibold">Data (bytes)</th>
+            <th class="tw-p-2 tw-border tw-text-center tw-font-semibold">Voice (seconds)</th>
+            <th class="tw-p-2 tw-border tw-text-center tw-font-semibold">SMS (count)</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (pct of percentages; track pct) {
+            <tr>
+              <td class="tw-p-2 tw-border tw-font-medium">{{ pct }}%</td>
+              @for (svc of ['Data', 'Voice', 'Sms']; track svc) {
+                <td class="tw-p-1 tw-border">
+                  <nz-input-number
+                    [formControlName]="'monthly' + svc + 'Threshold' + pct"
+                    [nzMin]="0"
+                    [nzStep]="1"
+                    nzPlaceHolder="—"
+                    class="tw-w-full">
+                  </nz-input-number>
+                </td>
+              }
+            </tr>
+          }
+        </tbody>
+      </table>
+
+    </form>
+  </ng-container>
+  <ng-template #modalFooter>
+    <button nz-button (click)="modalVisible = false" [disabled]="modalSaving">Cancel</button>
+    <button nz-button nzType="primary" (click)="saveAlarm()" [nzLoading]="modalSaving">
+      {{ editingId ? 'Save changes' : 'Create alarm' }}
+    </button>
+  </ng-template>
+</nz-modal>
+
+<!-- ══ DETAIL MODAL ════════════════════════════════════════════════════════ -->
+<nz-modal
+  [(nzVisible)]="detailVisible"
+  [nzTitle]="detailTitle"
+  [nzFooter]="null"
+  [nzWidth]="600"
+  (nzOnCancel)="detailVisible = false">
+  <ng-container *nzModalContent>
+    @if (selectedAlarm) {
+      <nz-descriptions nzBordered nzSize="small" [nzColumn]="1">
+        <nz-descriptions-item nzTitle="ID">
+          <span class="tw-font-mono tw-text-xs">{{ selectedAlarm.id }}</span>
+        </nz-descriptions-item>
+        <nz-descriptions-item nzTitle="Name">{{ selectedAlarm.name }}</nz-descriptions-item>
+        <nz-descriptions-item nzTitle="Description">{{ selectedAlarm.description || '—' }}</nz-descriptions-item>
+      </nz-descriptions>
+      @if (alarmDetailEntries().length > 0) {
+        <nz-divider nzText="Threshold configuration" nzOrientation="left"></nz-divider>
+        <nz-descriptions nzBordered nzSize="small" [nzColumn]="2">
+          @for (entry of alarmDetailEntries(); track entry.key) {
+            <nz-descriptions-item [nzTitle]="entry.key">{{ entry.value }}</nz-descriptions-item>
+          }
+        </nz-descriptions>
+      } @else {
+        <nz-empty nzNotFoundContent="No threshold values configured." class="tw-py-4"></nz-empty>
+      }
+      <div class="tw-flex tw-gap-2 tw-mt-4">
+        <button nz-button nzType="default" (click)="detailVisible = false; openEdit(selectedAlarm)">
+          <fa-icon [icon]="faPenToSquare" class="tw-mr-1"></fa-icon>Edit
+        </button>
+      </div>
+    }
+  </ng-container>
+  <ng-template #detailTitle>
+    <fa-icon [icon]="faBell" class="tw-mr-2 tw-text-gray-500"></fa-icon>
+    {{ selectedAlarm?.name || 'Alarm detail' }}
+  </ng-template>
+</nz-modal>

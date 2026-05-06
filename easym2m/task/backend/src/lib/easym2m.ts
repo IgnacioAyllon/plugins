@@ -1,7 +1,7 @@
 const EASYM2M_BASE_URL = 'https://services.lantia.io/api';
 
-// for development purposes (mock server)
-// const EASYM2M_BASE_URL = 'https://private-anon-14930b318d-easym2mmanagementapiv2en.apiary-mock.com/api';
+// for development purposes (mock server - v3 API)
+// const EASYM2M_BASE_URL = 'https://private-anon-8fd3a7c70a-easym2mmanagementapiv3en.apiary-mock.com/api';
 
 export interface EasyM2MCredentials {
   apiClientId: string;
@@ -106,8 +106,13 @@ function classifyHttpError(status: number, body: string): EasyM2MApiError {
 
     case status === 409:
       return new EasyM2MApiError(detail, status,
-        apiMessage, // ← aquí usas el mensaje real de la API
+        apiMessage,
         'CONFLICT');
+
+    case status === 422:
+      return new EasyM2MApiError(detail, status,
+        'This feature is not available for this SIM card\'s mobile operator. Statistics, Balance and Diagnostics are currently only supported for Telefónica SIM cards.',
+        'OPERATOR_NOT_SUPPORTED');
 
     case status === 429:
       return new EasyM2MApiError(detail, status,
@@ -233,6 +238,61 @@ export const EasyM2MClient = {
   async deleteAlarm(credentials: EasyM2MCredentials, id: string): Promise<void> {
     const url = `${EASYM2M_BASE_URL}/v3/customer/alarm/${id}`;
     return apiRequest(url, getAuthHeaders(credentials), 'DELETE');
+  },
+
+  /**
+   * Returns paginated CDR usage records for a SIM card.
+   * @param service  'data' | 'voice' | 'sms'
+   * @param sorted   'true' | 'false'
+   */
+  async listSimCardUsage(
+    credentials: EasyM2MCredentials,
+    iccid: string,
+    year: number,
+    month: number,
+    service: string,
+    size: number,
+    page: number,
+    sorted: boolean
+  ): Promise<any> {
+    const mm = String(month).padStart(2, '0');
+    const url = `${EASYM2M_BASE_URL}/v3/customer/consumptions/${year}/${mm}/${iccid}/${service}/${size}/${page}/${sorted}`;
+    return apiRequest(url, getAuthHeaders(credentials));
+  },
+
+  /** Returns aggregated monthly stats for a SIM card. Only works for Telefónica SIMs. */
+  async getSimCardStatistics(credentials: EasyM2MCredentials, iccid: string, year: number, month: number): Promise<any> {
+    const mm = String(month).padStart(2, '0');
+    const url = `${EASYM2M_BASE_URL}/v3/customer/stats/${year}/${mm}/${iccid}`;
+    return apiRequest(url, getAuthHeaders(credentials));
+  },
+
+  /** Returns the prepaid balance for a SIM card. Only works for Telefónica SIMs. */
+  async getSimCardBalance(credentials: EasyM2MCredentials, iccid: string): Promise<any> {
+    const url = `${EASYM2M_BASE_URL}/v3/customer/balance/${iccid}`;
+    return apiRequest(url, getAuthHeaders(credentials));
+  },
+
+  /**
+   * Runs a network diagnostic for a SIM card. Only works for Telefónica SIMs.
+   * @param type  Diagnostic type, e.g. 'ping' or 'location'
+   */
+  async getSimCardDiagnostics(credentials: EasyM2MCredentials, iccid: string, type: string): Promise<any> {
+    const url = `${EASYM2M_BASE_URL}/v3/customer/utils/diagnostics/${type}/${iccid}`;
+    return apiRequest(url, getAuthHeaders(credentials));
+  },
+
+  /** Returns billing invoices for the account for a given year and month. */
+  async listInvoices(credentials: EasyM2MCredentials, year: number, month: number): Promise<any> {
+    const mm = String(month).padStart(2, '0');
+    const url = `${EASYM2M_BASE_URL}/v3/customer/invoices/${year}/${mm}`;
+    return apiRequest(url, getAuthHeaders(credentials));
+  },
+
+  /** Returns the current account balance. */
+  async getAccountBalance(credentials: EasyM2MCredentials): Promise<any> {
+    const url = `${EASYM2M_BASE_URL}/v3/customer/balance`;
+    return apiRequest(url, getAuthHeaders(credentials));
   },
 
 };

@@ -6,9 +6,10 @@ import { NzMenuModule } from 'ng-zorro-antd/menu';
 import { NzSpaceModule } from "ng-zorro-antd/space";
 import { NzTabsModule } from 'ng-zorro-antd/tabs';
 
-// Components
 import { SettingsComponent } from "./features/settings/settings.component";
 import { SimCardsComponent } from "./features/simcards/simcards.component";
+import { AlarmsComponent } from "./features/alarms/alarms.component";
+import { InvoicesComponent } from "./features/invoices/invoices.component";
 
 @Component({
   selector: 'app-root',
@@ -19,6 +20,8 @@ import { SimCardsComponent } from "./features/simcards/simcards.component";
     NzMenuModule,
     SettingsComponent,
     SimCardsComponent,
+    AlarmsComponent,
+    InvoicesComponent,
     NzSpaceModule,
     NzTabsModule
   ],
