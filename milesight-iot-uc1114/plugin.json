@@ -1,7 +1,7 @@
 {
   "name": "milesight_iot_uc1114",
   "version": "1.0.0",
-  "description": "LoRa Controller",
+  "description": "The Milesight UC1114 is a rugged remote I/O controller designed for industrial automation and monitoring using LoRaWAN technology.",
   "author": "Thinger.io",
   "license": "MIT",
   "repository": {
@@ -11,7 +11,7 @@
   },
   "metadata": {
     "name": "Milesight-Iot UC1114",
-    "description": "LoRa Controller",
+    "description": "The Milesight UC1114 is a rugged remote I/O controller designed for industrial automation and monitoring using LoRaWAN technology.",
     "image": "assets/uc1114.png",
     "category": "devices",
     "vendor": "milesight-iot"
@@ -19,7 +19,7 @@
   "resources": {
     "products": [
       {
-        "description": "LoRa Controller",
+        "description": "The Milesight UC1114 is a rugged remote I/O controller designed for industrial automation and monitoring using LoRaWAN technology.",
         "enabled": true,
         "name": "Milesight-Iot UC1114",
         "product": "milesight_iot_uc1114",
