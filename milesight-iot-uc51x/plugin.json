@@ -1,0 +1,718 @@
+{
+  "name": "milesight_iot_uc51x",
+  "version": "1.0.0",
+  "description": "Milesight UC51x remotely controls DC latching solenoid valves via LoRaWAN. Features 2 solenoid and 2 GPIO interfaces, built-in solar panel, high-capacity battery, IP67-rated enclosure with M12 connectors for harsh outdoor environments.",
+  "author": "Thinger.io",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thinger-io/plugins.git",
+    "directory": "milesight-iot-uc51x"
+  },
+  "metadata": {
+    "name": "Milesight-Iot UC51X",
+    "description": "Milesight UC51x remotely controls DC latching solenoid valves via LoRaWAN. Features 2 solenoid and 2 GPIO interfaces, built-in solar panel, high-capacity battery, IP67-rated enclosure with M12 connectors for harsh outdoor environments.",
+    "image": "assets/uc51x.png",
+    "category": "devices",
+    "vendor": "milesight-iot"
+  },
+  "resources": {
+    "products": [
+      {
+        "description": "Milesight UC51x remotely controls DC latching solenoid valves via LoRaWAN. Features 2 solenoid and 2 GPIO interfaces, built-in solar panel, high-capacity battery, IP67-rated enclosure with M12 connectors for harsh outdoor environments.",
+        "enabled": true,
+        "name": "Milesight-Iot UC51X",
+        "product": "milesight_iot_uc51x",
+        "profile": {
+          "api": {
+            "downlink": {
+              "enabled": true,
+              "handle_connectivity": false,
+              "request": {
+                "data": {
+                  "path": "/downlink",
+                  "payload": "{\r\n    \"data\"    : \"{{payload.data=\"\"}}\",\r\n    \"port\"    :  {{payload.port=2}},\r\n    \"priority\":  {{payload.priority=3}},\r\n    \"confirmed\" :  {{payload.confirmed=false}},\r\n    \"uplink\"  :  {{property.uplink}} \r\n}",
+                  "payload_function": "",
+                  "payload_type": "",
+                  "plugin": "{{property.uplink.source}}",
+                  "target": "plugin_endpoint"
+                }
+              }
+            },
+            "uplink": {
+              "enabled": true,
+              "handle_connectivity": true,
+              "request": {
+                "data": {
+                  "payload": "{{payload}}",
+                  "payload_function": "",
+                  "payload_type": "source_payload",
+                  "resource_stream": "uplink",
+                  "target": "resource_stream"
+                }
+              }
+            }
+          },
+          "autoprovisions": {
+            "device_autoprovisioning": {
+              "config": {
+                "mode": "pattern",
+                "pattern": "uc51[12]_.*"
+              },
+              "enabled": true
+            }
+          },
+          "buckets": {
+            "milesight_uc51x_data": {
+              "backend": "mongodb",
+              "data": {
+                "payload": "{{payload}}",
+                "payload_function": "",
+                "payload_type": "source_payload",
+                "resource_stream": "uplink_decoded",
+                "target": "resource_stream"
+              },
+              "enabled": true,
+              "retention": {
+                "period": 3,
+                "unit": "months"
+              },
+              "tags": []
+            }
+          },
+          "code": {
+            "code": "function decodeThingerUplink(thingerData) {\n    // 0. If data has already been decoded, we will return it\n    if (thingerData.decodedPayload) return thingerData.decodedPayload;\n    \n    // 1. Extract and Validate Input\n    // We need 'payload' (hex string) and 'fPort' (integer)\n    const hexPayload = thingerData.payload || \"\";\n    const port = thingerData.fPort || 1;\n\n    // 2. Convert Hex String to Byte Array\n    const bytes = [];\n    for (let i = 0; i < hexPayload.length; i += 2) {\n        bytes.push(parseInt(hexPayload.substr(i, 2), 16));\n    }\n\n    // 3. Dynamic Function Detection and Execution\n    \n    // CASE A: (The Things Stack v3)\n    if (typeof decodeUplink === 'function') {\n        try {\n            const input = {\n                bytes: bytes,\n                fPort: port\n            };\n            var result = decodeUplink(input);\n            \n            if (result.data) return result.data;\n\n            return result; \n        } catch (e) {\n            console.error(\"Error inside decodeUplink:\", e);\n            throw e;\n        }\n    }\n\n    // CASE B: Legacy TTN (v2)\n    else if (typeof Decoder === 'function') {\n        try {\n            return Decoder(bytes, port);\n        } catch (e) {\n            console.error(\"Error inside Decoder:\", e);\n            throw e;\n        }\n    }\n\n    // CASE C: No decoder found\n    else {\n        throw new Error(\"No compatible TTN decoder function (decodeUplink or Decoder) found in scope.\");\n    }\n}\n\n\n// TTN decoder\n/**\n * Payload Decoder\n *\n * Copyright 2025 Milesight IoT\n *\n * @product UC511 / UC512\n */\nvar RAW_VALUE = 0x00;\n\n/* eslint no-redeclare: \"off\" */\n/* eslint-disable */\n// Chirpstack v4\nfunction decodeUplink(input) {\n    var decoded = milesightDeviceDecode(input.bytes);\n    return { data: decoded };\n}\n\n// Chirpstack v3\nfunction Decode(fPort, bytes) {\n    return milesightDeviceDecode(bytes);\n}\n\n// The Things Network\nfunction Decoder(bytes, port) {\n    return milesightDeviceDecode(bytes);\n}\n/* eslint-enable */\n\nfunction milesightDeviceDecode(bytes) {\n    var decoded = {};\n\n    for (var i = 0; i < bytes.length; ) {\n        var channel_id = bytes[i++];\n        var channel_type = bytes[i++];\n\n        // IPSO VERSION\n        if (channel_id === 0xff && channel_type === 0x01) {\n            decoded.ipso_version = readProtocolVersion(bytes[i]);\n            i += 1;\n        }\n        // HARDWARE VERSION\n        else if (channel_id === 0xff && channel_type === 0x09) {\n            decoded.hardware_version = readHardwareVersion(bytes.slice(i, i + 2));\n            i += 2;\n        }\n        // FIRMWARE VERSION\n        else if (channel_id === 0xff && channel_type === 0x0a) {\n            decoded.firmware_version = readFirmwareVersion(bytes.slice(i, i + 2));\n            i += 2;\n        }\n        // TSL VERSION\n        else if (channel_id === 0xff && channel_type === 0xff) {\n            decoded.tsl_version = readTslVersion(bytes.slice(i, i + 2));\n            i += 2;\n        }\n        // SERIAL NUMBER\n        else if (channel_id === 0xff && channel_type === 0x16) {\n            decoded.sn = readSerialNumber(bytes.slice(i, i + 8));\n            i += 8;\n        }\n        // LORAWAN CLASS TYPE\n        else if (channel_id === 0xff && channel_type === 0x0f) {\n            decoded.lorawan_class = readLoRaWANClass(bytes[i]);\n            i += 1;\n        }\n        // RESET EVENT\n        else if (channel_id === 0xff && channel_type === 0xfe) {\n            decoded.reset_event = readResetEvent(1);\n            i += 1;\n        }\n        // DEVICE STATUS\n        else if (channel_id === 0xff && channel_type === 0x0b) {\n            decoded.device_status = readDeviceStatus(1);\n            i += 1;\n        }\n        // BATTERY\n        else if (channel_id === 0x01 && channel_type === 0x75) {\n            decoded.battery = readUInt8(bytes[i]);\n            i += 1;\n        }\n        // VALVE 1\n        else if (channel_id === 0x03 && channel_type == 0x01) {\n            var valve_value = readUInt8(bytes[i]);\n            if (valve_value === 0xff) {\n                decoded.valve_1_result = readDelayControlResult(1);\n            } else {\n                decoded.valve_1 = readValveStatus(valve_value);\n            }\n            i += 1;\n        }\n        // VALVE 2\n        else if (channel_id === 0x05 && channel_type == 0x01) {\n            var valve_value = readUInt8(bytes[i]);\n            if (valve_value === 0xff) {\n                decoded.valve_2_result = readDelayControlResult(1);\n            } else {\n                decoded.valve_2 = readValveStatus(valve_value);\n            }\n            i += 1;\n        }\n        // VALVE 1 Pulse\n        else if (channel_id === 0x04 && channel_type === 0xc8) {\n            decoded.valve_1_pulse = readUInt32LE(bytes.slice(i, i + 4));\n            i += 4;\n        }\n        // VALVE 2 Pulse\n        else if (channel_id === 0x06 && channel_type === 0xc8) {\n            decoded.valve_2_pulse = readUInt32LE(bytes.slice(i, i + 4));\n            i += 4;\n        }\n        // GPIO 1 (hardware_version >= v2.0 and firmware_version >= v2.4)\n        else if (channel_id === 0x07 && channel_type == 0x01) {\n            decoded.gpio_1 = readGpioStatus(bytes[i]);\n            i += 1;\n        }\n        // GPIO 2 (hardware_version >= v2.0 and firmware_version >= v2.4)\n        else if (channel_id === 0x08 && channel_type == 0x01) {\n            decoded.gpio_2 = readGpioStatus(bytes[i]);\n            i += 1;\n        }\n        // PRESSURE (hardware_version >= v4.0 and firmware_version >= v1.2)\n        else if (channel_id === 0x09 && channel_type === 0x7b) {\n            decoded.pressure = readUInt16LE(bytes.slice(i, i + 2));\n            i += 2;\n        }\n        // PRESSURE FAILED (hardware_version >= v4.0 and firmware_version >= v1.2)\n        else if (channel_id === 0xb9 && channel_type === 0x7b) {\n            decoded.pressure_sensor_status = readSensorStatus(bytes[i]);\n            i += 1;\n        }\n        // CUSTOM MESSAGE (hardware_version >= v4.0 and firmware_version >= v1.1)\n        else if (channel_id === 0xff && channel_type === 0x12) {\n            decoded.custom_message = readAscii(bytes.slice(i, bytes.length));\n            i = bytes.length;\n        }\n        // HISTORY (hardware_version >= v3.0 and firmware_version >= v3.1)\n        else if (channel_id === 0x20 && channel_type === 0xce) {\n            var timestamp = readUInt32LE(bytes.slice(i, i + 4));\n            var value = bytes[i + 4];\n            var status = readValveStatus(value & 0x01);\n            var mode_value = (value >> 1) & 0x01;\n            var mode = readValveMode(mode_value);\n            var gpio = readGpioStatus((value >> 2) & 0x01);\n            var index = ((value >> 4) & 0x01) === 0 ? 1 : 2;\n            var pulse = readUInt32LE(bytes.slice(i + 5, i + 9));\n\n            var data = { timestamp: timestamp, mode: mode };\n            // GPIO mode\n            if (mode_value === 0) {\n                data[\"valve_\" + index] = status;\n                data[\"gpio_\" + index] = gpio;\n            }\n            // Counter mode\n            else if (mode_value === 1) {\n                data[\"valve_\" + index] = status;\n                data[\"valve_\" + index + \"_pulse\"] = pulse;\n            }\n            i += 9;\n            decoded.history = decoded.history || [];\n            decoded.history.push(data);\n        }\n        // HISTORY PIPE PRESSURE (hardware_version >= v4.0 & firmware_version >= v1.1)\n        else if (channel_id === 0x21 && channel_type === 0xce) {\n            var data = {};\n            data.timestamp = readUInt32LE(bytes.slice(i, i + 4));\n            data.pressure = readUInt16LE(bytes.slice(i + 4, i + 6));\n            i += 6;\n            decoded.history = decoded.history || [];\n            decoded.history.push(data);\n        }\n        // DOWNLINK RESPONSE\n        else if (channel_id === 0xfe || channel_id === 0xff) {\n            var result = handle_downlink_response(channel_type, bytes, i);\n            decoded = Object.assign(decoded, result.data);\n            i = result.offset;\n        } else {\n            break;\n        }\n    }\n\n    return decoded;\n}\n\n// 0xFE\nfunction handle_downlink_response(channel_type, bytes, offset) {\n    var decoded = {};\n\n    switch (channel_type) {\n        case 0x02:\n            decoded.collection_interval = readUInt16LE(bytes.slice(offset, offset + 2));\n            offset += 2;\n            break;\n        case 0x03:\n            decoded.report_interval = readUInt16LE(bytes.slice(offset, offset + 2));\n            offset += 2;\n            break;\n        case 0x17:\n            decoded.time_zone = readTimeZone(readInt16LE(bytes.slice(offset, offset + 2)));\n            offset += 2;\n            break;\n        case 0x1d:\n            var data = readUInt8(bytes[offset]);\n            var index = ((data >> 0) & 0x01) + 1;\n            var valve_status_value = (data >> 5) & 0x01;\n            var time_rule_enable_value = (data >> 7) & 0x01;\n            var pulse_rule_enable_value = (data >> 6) & 0x01;\n            var valve_name = \"valve_\" + index + \"_task\";\n\n            decoded[valve_name] = {};\n            decoded[valve_name].time_rule_enable = readEnableStatus(time_rule_enable_value);\n            decoded[valve_name].pulse_rule_enable = readEnableStatus(pulse_rule_enable_value);\n            decoded[valve_name].valve_status = readValveStatus(valve_status_value);\n            decoded[valve_name].sequence_id = readUInt8(bytes[offset + 1]);\n            offset += 2;\n\n            if (time_rule_enable_value === 1) {\n                decoded[valve_name].duration = readUInt24LE(bytes.slice(offset, offset + 4));\n                offset += 3;\n            }\n            if (pulse_rule_enable_value === 1) {\n                decoded[valve_name].valve_pulse = readUInt32LE(bytes.slice(offset, offset + 4));\n                offset += 4;\n            }\n            break;\n        case 0x1e:\n            decoded.class_a_response_time = readUInt32LE(bytes.slice(offset, offset + 4));\n            offset += 4;\n            break;\n        case 0x27:\n            decoded.clear_history = readYesNoStatus(1);\n            offset += 1;\n            break;\n        case 0x28:\n            decoded.report_status = readYesNoStatus(1);\n            offset += 1;\n            break;\n        case 0x35:\n            decoded.d2d_key = bytesToHexString(bytes.slice(offset, offset + 8));\n            offset += 8;\n            break;\n        case 0x3b:\n            decoded.sync_time_type = readSyncTimeType(bytes[offset]);\n            offset += 1;\n            break;\n        case 0x46:\n            decoded.gpio_jitter_time = readUInt8(bytes[offset]);\n            offset += 1;\n            break;\n        case 0x4a:\n            decoded.sync_time = readYesNoStatus(1);\n            offset += 1;\n            break;\n        case 0x4b: // batch_read_rules\n            var type = readUInt8(bytes[offset]);\n            var rule_bit_offset = { rule_1: 0, rule_2: 1, rule_3: 2, rule_4: 3, rule_5: 4, rule_6: 5, rule_7: 6, rule_8: 7, rule_9: 8, rule_10: 9, rule_11: 10, rule_12: 11, rule_13: 12, rule_14: 13, rule_15: 14, rule_16: 15 };\n            // batch read rules\n            if (type === 0) {\n                decoded.batch_read_rules = {};\n                var data = readUInt16LE(bytes.slice(offset + 1, offset + 3));\n                for (var key in rule_bit_offset) {\n                    decoded.batch_read_rules[key] = readYesNoStatus((data >>> rule_bit_offset[key]) & 0x01);\n                }\n            }\n            // batch enable rules\n            else if (type === 1) {\n                decoded.batch_enable_rules = {};\n                var data = readUInt16LE(bytes.slice(offset + 1, offset + 3));\n                for (var key in rule_bit_offset) {\n                    decoded.batch_enable_rules[key] = readEnableStatus((data >>> rule_bit_offset[key]) & 0x01);\n                }\n            }\n            // batch remove rules\n            else if (type === 2) {\n                decoded.batch_remove_rules = {};\n                var data = readUInt16LE(bytes.slice(offset + 1, offset + 3));\n                for (var key in rule_bit_offset) {\n                    decoded.batch_remove_rules[key] = readYesNoStatus((data >>> rule_bit_offset[key]) & 0x01);\n                }\n            }\n            // enable single rule\n            else if (type === 3) {\n                var rule_index = readUInt8(bytes[offset + 1]);\n                var rule_x_name = \"rule_\" + rule_index + \"_enable\";\n                decoded[rule_x_name] = readEnableStatus(bytes[offset + 2]);\n            }\n            // remove single rule\n            else if (type === 4) {\n                var rule_index = readUInt8(bytes[offset + 1]);\n                var rule_x_name = \"rule_\" + rule_index + \"_remove\";\n                decoded[rule_x_name] = readYesNoStatus(bytes[offset + 2]);\n            }\n            offset += 3;\n            break;\n        case 0x4c:\n            var rule_index = readUInt8(bytes[offset]);\n            var rule_index_name = \"rule_\" + rule_index;\n            decoded.query_rule_config = decoded.query_rule_config || {};\n            decoded.query_rule_config[rule_index_name] = readYesNoStatus(1);\n            offset += 1;\n            break;\n        case 0x4d:\n            var rule_config = {};\n            rule_config.id = readUInt8(bytes[offset]);\n            var data = readUInt8(bytes[offset + 1]);\n            rule_config.enable = readEnableStatus((data >> 7) & 0x01);\n            rule_config.valve_status = readValveStatus((data >> 6) & 0x01);\n            rule_config.valve_2_enable = readEnableStatus((data >> 1) & 0x01);\n            rule_config.valve_1_enable = readEnableStatus((data >> 0) & 0x01);\n            rule_config.start_hour = readUInt8(bytes[offset + 2]);\n            rule_config.start_min = readUInt8(bytes[offset + 3]);\n            rule_config.end_hour = readUInt8(bytes[offset + 4]);\n            rule_config.end_min = readUInt8(bytes[offset + 5]);\n            offset += 6;\n            decoded.rules_config = decoded.rules_config || [];\n            decoded.rules_config.push(rule_config);\n            break;\n        case 0x4e:\n            var valve_index = readUInt8(bytes[offset]);\n            var valve_index_name = \"clear_valve_\" + valve_index + \"_pulse\";\n            // ignore the next byte\n            decoded[valve_index_name] = readYesNoStatus(1);\n            offset += 2;\n            break;\n        case 0x4f:\n            decoded.valve_power_supply_config = {};\n            decoded.valve_power_supply_config.counts = readUInt8(bytes[offset]);\n            decoded.valve_power_supply_config.control_pulse_time = readUInt16LE(bytes.slice(offset + 1, offset + 3));\n            decoded.valve_power_supply_config.power_time = readUInt16LE(bytes.slice(offset + 3, offset + 5));\n            offset += 5;\n            break;\n        case 0x52:\n            // ignore first byte\n            decoded.pulse_filter_config = {};\n            decoded.pulse_filter_config.mode = readPulseFilterMode(bytes[offset + 1]);\n            decoded.pulse_filter_config.time = readUInt16LE(bytes.slice(offset + 2, offset + 4));\n            offset += 4;\n            break;\n        case 0x53:\n        case 0x55:\n            var rule_config = {};\n            rule_config.id = readUInt8(bytes[offset]);\n            rule_config.enable = readEnableStatus(bytes[offset + 1]);\n            rule_config.condition = readRuleCondition(bytes.slice(offset + 2, offset + 15));\n            rule_config.action = readRuleAction(bytes.slice(offset + 15, offset + 28));\n            offset += 29;\n\n            decoded.rules_config = decoded.rules_config || [];\n            decoded.rules_config.push(rule_config);\n            break;\n        case 0x68:\n            decoded.history_enable = readEnableStatus(bytes[offset]);\n            offset += 1;\n            break;\n        case 0x69:\n            decoded.retransmit_enable = readEnableStatus(bytes[offset]);\n            offset += 1;\n            break;\n        case 0x6a:\n            var mode_value = readUInt8(bytes[offset]);\n            if (mode_value === 0x00) {\n                decoded.retransmit_interval = readUInt16LE(bytes.slice(offset + 1, offset + 3));\n                offset += 3;\n            } else if (mode_value === 0x01) {\n                decoded.resend_interval = readUInt16LE(bytes.slice(offset + 1, offset + 3));\n                offset += 3;\n            }\n            break;\n        case 0x84:\n            decoded.d2d_enable = readEnableStatus(bytes[offset]);\n            offset += 1;\n            break;\n        case 0x92:\n            var index = readUInt8(bytes[offset]);\n            var valve_name = \"valve_\" + index + \"_pulse\";\n            decoded[valve_name] = readUInt32LE(bytes.slice(offset + 1, offset + 5));\n            offset += 5;\n            break;\n        case 0xab:\n            decoded.pressure_calibration_settings = {};\n            decoded.pressure_calibration_settings.enable = readEnableStatus(bytes[offset]);\n            decoded.pressure_calibration_settings.calibration_value = readInt16LE(bytes.slice(offset + 1, offset + 3));\n            offset += 3;\n            break;\n        case 0xf3:\n            decoded.response_enable = readEnableStatus(bytes[offset]);\n            offset += 1;\n            break;\n        default:\n            throw new Error(\"unknown downlink response\");\n    }\n\n    return { data: decoded, offset: offset };\n}\n\nfunction readProtocolVersion(bytes) {\n    var major = (bytes & 0xf0) >> 4;\n    var minor = bytes & 0x0f;\n    return \"v\" + major + \".\" + minor;\n}\n\nfunction readHardwareVersion(bytes) {\n    var major = (bytes[0] & 0xff).toString(16);\n    var minor = (bytes[1] & 0xff) >> 4;\n    return \"v\" + major + \".\" + minor;\n}\n\nfunction readFirmwareVersion(bytes) {\n    var major = (bytes[0] & 0xff).toString(16);\n    var minor = (bytes[1] & 0xff).toString(16);\n    return \"v\" + major + \".\" + minor;\n}\n\nfunction readTslVersion(bytes) {\n    var major = bytes[0] & 0xff;\n    var minor = bytes[1] & 0xff;\n    return \"v\" + major + \".\" + minor;\n}\n\nfunction readSerialNumber(bytes) {\n    var temp = [];\n    for (var idx = 0; idx < bytes.length; idx++) {\n        temp.push((\"0\" + (bytes[idx] & 0xff).toString(16)).slice(-2));\n    }\n    return temp.join(\"\");\n}\n\nfunction readLoRaWANClass(type) {\n    var class_map = {\n        0: \"Class A\",\n        1: \"Class B\",\n        2: \"Class C\",\n        3: \"Class CtoB\",\n    };\n    return getValue(class_map, type);\n}\n\nfunction readResetEvent(status) {\n    var status_map = { 0: \"normal\", 1: \"reset\" };\n    return getValue(status_map, status);\n}\n\nfunction readDeviceStatus(status) {\n    var status_map = { 0: \"off\", 1: \"on\" };\n    return getValue(status_map, status);\n}\n\nfunction readValveStatus(status) {\n    var status_map = { 0: \"close\", 1: \"open\" };\n    return getValue(status_map, status);\n}\n\nfunction readDelayControlResult(value) {\n    var result_map = { 0: \"success\", 1: \"failed\" };\n    return getValue(result_map, value);\n}\n\nfunction readSensorStatus(value) {\n    var status_map = { 1: \"sensor error\" };\n    return getValue(status_map, value);\n}\n\nfunction readValveMode(value) {\n    var mode_map = { 0: \"counter\", 1: \"gpio\" };\n    return getValue(mode_map, value);\n}\n\nfunction readGpioStatus(status) {\n    var status_map = { 0: \"off\", 1: \"on\" };\n    return getValue(status_map, status);\n}\n\nfunction readEnableStatus(status) {\n    var status_map = { 0: \"disable\", 1: \"enable\" };\n    return getValue(status_map, status);\n}\n\nfunction readYesNoStatus(status) {\n    var status_map = { 0: \"no\", 1: \"yes\" };\n    return getValue(status_map, status);\n}\n\nfunction readTimeZone(time_zone) {\n    var timezone_map = { \"-120\": \"UTC-12\", \"-110\": \"UTC-11\", \"-100\": \"UTC-10\", \"-95\": \"UTC-9:30\", \"-90\": \"UTC-9\", \"-80\": \"UTC-8\", \"-70\": \"UTC-7\", \"-60\": \"UTC-6\", \"-50\": \"UTC-5\", \"-40\": \"UTC-4\", \"-35\": \"UTC-3:30\", \"-30\": \"UTC-3\", \"-20\": \"UTC-2\", \"-10\": \"UTC-1\", 0: \"UTC\", 10: \"UTC+1\", 20: \"UTC+2\", 30: \"UTC+3\", 35: \"UTC+3:30\", 40: \"UTC+4\", 45: \"UTC+4:30\", 50: \"UTC+5\", 55: \"UTC+5:30\", 57: \"UTC+5:45\", 60: \"UTC+6\", 65: \"UTC+6:30\", 70: \"UTC+7\", 80: \"UTC+8\", 90: \"UTC+9\", 95: \"UTC+9:30\", 100: \"UTC+10\", 105: \"UTC+10:30\", 110: \"UTC+11\", 120: \"UTC+12\", 127: \"UTC+12:45\", 130: \"UTC+13\", 140: \"UTC+14\" };\n    return getValue(timezone_map, time_zone);\n}\n\nfunction readSyncTimeType(type) {\n    var type_map = { 1: \"v1.0.2\", 2: \"v1.0.3\", 3: \"v1.1.0\" };\n    return getValue(type_map, type);\n}\n\nfunction readPulseFilterMode(mode) {\n    var mode_map = { 1: \"hardware\", 2: \"software\" };\n    return getValue(mode_map, mode);\n}\n\nfunction readRuleCondition(bytes) {\n    var condition = {};\n\n    var offset = 0;\n    var condition_type_value = readUInt8(bytes[offset]);\n    condition.type = readNewConditionType(condition_type_value);\n    switch (condition_type_value) {\n        case 0x00:\n            break;\n        case 0x01:\n            condition.start_time = readUInt32LE(bytes.slice(offset + 1, offset + 5));\n            condition.end_time = readUInt32LE(bytes.slice(offset + 5, offset + 9));\n            condition.repeat_enable = readEnableStatus(bytes[offset + 9]);\n            var repeat_mode_value = readUInt8(bytes[offset + 10]);\n            condition.repeat_mode = getRepeatMode(repeat_mode_value);\n            if (repeat_mode_value === 0x00 || repeat_mode_value === 0x01) {\n                condition.repeat_step = readUInt16LE(bytes.slice(offset + 11, offset + 13));\n            } else if (repeat_mode_value === 0x02) {\n                condition.repeat_week = readWeekday(bytes[offset + 11]);\n            }\n            break;\n        case 0x02:\n            condition.d2d_command = readD2DCommand(bytes.slice(offset + 1, offset + 3));\n            break;\n        case 0x03:\n            condition.valve_index = readUInt8(bytes[offset + 1]);\n            condition.duration = readUInt16LE(bytes.slice(offset + 2, offset + 4));\n            condition.pulse_threshold = readUInt32LE(bytes.slice(offset + 4, offset + 8));\n            break;\n        case 0x04:\n            condition.valve_index = readUInt8(bytes[offset + 1]);\n            condition.pulse_threshold = readUInt32LE(bytes.slice(offset + 2, offset + 6));\n            break;\n    }\n    return condition;\n}\n\nfunction getRepeatMode(repeat_mode_value) {\n    var repeat_mode_map = { 0: \"monthly\", 1: \"daily\", 2: \"weekly\" };\n    return getValue(repeat_mode_map, repeat_mode_value);\n}\n\nfunction readWeekday(weekday_value) {\n    var weekday_bit_offset = { monday: 0, tuesday: 1, wednesday: 2, thursday: 3, friday: 4, saturday: 5, sunday: 6 };\n\n    var weekday = {};\n    for (var key in weekday_bit_offset) {\n        weekday[key] = readEnableStatus((weekday_value >>> weekday_bit_offset[key]) & 0x01);\n    }\n    return weekday;\n}\n\nfunction readNewConditionType(condition_type_value) {\n    var condition_type_map = { 0: \"none\", 1: \"time\", 2: \"d2d\", 3: \"time_or_pulse_threshold\", 4: \"pulse_threshold\", 5: \"pressure_threshold\" };\n    return getValue(condition_type_map, condition_type_value);\n}\n\nfunction readRuleAction(bytes) {\n    var action_type_map = { 0: \"none\", 1: \"em_valve_control\", 2: \"valve_control\", 3: \"report\" };\n\n    var offset = 0;\n    var action = {};\n\n    var type_value = readUInt8(bytes[offset]);\n    action.type = getValue(action_type_map, type_value);\n    switch (type_value) {\n        case 0x00:\n            break;\n        case 0x01:\n            action.valve_index = readUInt8(bytes[offset + 1]);\n            action.valve_opening = readUInt8(bytes[offset + 2]);\n            action.time_enable = readEnableStatus(bytes[offset + 3]);\n            action.duration = readUInt32LE(bytes.slice(offset + 4, offset + 8));\n            action.pulse_enable = readEnableStatus(bytes[offset + 8]);\n            action.pulse_threshold = readUInt32LE(bytes.slice(offset + 9, offset + 13));\n            break;\n        case 0x02:\n            action.valve_index = readUInt8(bytes[offset + 1]);\n            action.valve_opening = readUInt8(bytes[offset + 2]);\n            action.time_enable = readEnableStatus(bytes[offset + 3]);\n            action.duration = readUInt32LE(bytes.slice(offset + 4, offset + 8));\n            action.pulse_enable = readEnableStatus(bytes[offset + 8]);\n            action.pulse_threshold = readUInt32LE(bytes.slice(offset + 9, offset + 13));\n            break;\n        case 0x03:\n            action.report_type = readReportType(readUInt8(bytes[offset + 1]));\n            action.report_content = readAscii(bytes.slice(offset + 2, offset + 10));\n            break;\n    }\n    return action;\n}\n\nfunction readReportType(report_type_value) {\n    var report_type_map = { 1: \"valve_1\", 2: \"valve_2\", 3: \"custom_message\" };\n    return getValue(report_type_map, report_type_value);\n}\n\n/* eslint-disable */\nfunction readUInt8(bytes) {\n    return bytes & 0xff;\n}\n\nfunction readInt8(bytes) {\n    var ref = readUInt8(bytes);\n    return ref > 0x7f ? ref - 0x100 : ref;\n}\n\nfunction readUInt16LE(bytes) {\n    var value = (bytes[1] << 8) + bytes[0];\n    return value & 0xffff;\n}\n\nfunction readInt16LE(bytes) {\n    var ref = readUInt16LE(bytes);\n    return ref > 0x7fff ? ref - 0x10000 : ref;\n}\n\nfunction readUInt24LE(bytes) {\n    var value = (bytes[2] << 16) + (bytes[1] << 8) + bytes[0];\n    return value & 0xffffff;\n}\n\nfunction readInt24LE(bytes) {\n    var ref = readUInt24LE(bytes);\n    return ref > 0x7fffff ? ref - 0x1000000 : ref;\n}\n\nfunction readUInt32LE(bytes) {\n    var value = (bytes[3] << 24) + (bytes[2] << 16) + (bytes[1] << 8) + bytes[0];\n    return (value & 0xffffffff) >>> 0;\n}\n\nfunction readInt32LE(bytes) {\n    var ref = readUInt32LE(bytes);\n    return ref > 0x7fffffff ? ref - 0x100000000 : ref;\n}\n\nfunction readAscii(bytes) {\n    var str = \"\";\n    for (var i = 0; i < bytes.length; i++) {\n        if (bytes[i] === 0) {\n            continue;\n        }\n        str += String.fromCharCode(bytes[i]);\n    }\n    return str;\n}\n\nfunction readD2DCommand(bytes) {\n    return (\"0\" + (bytes[1] & 0xff).toString(16)).slice(-2) + (\"0\" + (bytes[0] & 0xff).toString(16)).slice(-2);\n}\n\nfunction bytesToHexString(bytes) {\n    var temp = [];\n    for (var i = 0; i < bytes.length; i++) {\n        temp.push((\"0\" + (bytes[i] & 0xff).toString(16)).slice(-2));\n    }\n    return temp.join(\"\");\n}\n\nfunction getValue(map, key) {\n    if (RAW_VALUE) return key;\n\n    var value = map[key];\n    if (!value) value = \"unknown\";\n    return value;\n}\n\n//if (!Object.assign) {\n    Object.defineProperty(Object, \"assign\", {\n        enumerable: false,\n        configurable: true,\n        writable: true,\n        value: function (target) {\n            \"use strict\";\n            if (target == null) {\n                throw new TypeError(\"Cannot convert first argument to object\");\n            }\n\n            var to = Object(target);\n            for (var i = 1; i < arguments.length; i++) {\n                var nextSource = arguments[i];\n                if (nextSource == null) {\n                    continue;\n                }\n                nextSource = Object(nextSource);\n\n                var keysArray = Object.keys(Object(nextSource));\n                for (var nextIndex = 0, len = keysArray.length; nextIndex < len; nextIndex++) {\n                    var nextKey = keysArray[nextIndex];\n                    var desc = Object.getOwnPropertyDescriptor(nextSource, nextKey);\n                    if (desc !== undefined && desc.enumerable) {\n                        // concat array\n                        if (Array.isArray(to[nextKey]) && Array.isArray(nextSource[nextKey])) {\n                            to[nextKey] = to[nextKey].concat(nextSource[nextKey]);\n                        } else {\n                            to[nextKey] = nextSource[nextKey];\n                        }\n                    }\n                }\n            }\n            return to;\n        },\n    });\n//}",
+            "environment": "javascript",
+            "storage": "",
+            "version": "1.0"
+          },
+          "flows": {
+            "milesight_uc51x_decoder": {
+              "data": {
+                "payload": "{{payload}}",
+                "payload_function": "decodeThingerUplink",
+                "payload_type": "source_payload",
+                "resource": "uplink",
+                "source": "resource",
+                "update": "events"
+              },
+              "enabled": true,
+              "sink": {
+                "payload": "{{payload}}",
+                "payload_function": "",
+                "payload_type": "source_payload",
+                "resource_stream": "uplink_decoded",
+                "target": "resource_stream"
+              },
+              "split_data": false
+            }
+          },
+          "properties": {
+            "uplink": {
+              "data": {
+                "payload": "{{payload}}",
+                "payload_function": "",
+                "payload_type": "source_payload",
+                "resource": "uplink",
+                "source": "resource",
+                "update": "events"
+              },
+              "default": {
+                "source": "value"
+              },
+              "enabled": true
+            }
+          }
+        },
+        "_resources": {
+          "properties": [
+            {
+              "property": "dashboard",
+              "value": {
+                "tabs": [
+                  {
+                    "name": "UC51x Overview",
+                    "widgets": [
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 0,
+                          "sizeX": 2,
+                          "sizeY": 5
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Battery"
+                        },
+                        "properties": {
+                          "color": "#2ebd59",
+                          "gradient": false,
+                          "max": 100,
+                          "min": 0,
+                          "unit": "%"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc51x_data",
+                              "mapping": "battery",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#2ebd59",
+                            "name": "Battery",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "gauge"
+                      },
+                      {
+                        "layout": {
+                          "col": 2,
+                          "row": 0,
+                          "sizeX": 2,
+                          "sizeY": 5
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Valve 1 Status"
+                        },
+                        "properties": {
+                          "color": "#4bd763",
+                          "colors": [
+                            {
+                              "blink": false,
+                              "color": "#95a5a6",
+                              "max": 0,
+                              "min": 0
+                            },
+                            {
+                              "blink": false,
+                              "color": "#2ecc71",
+                              "max": 1,
+                              "min": 1
+                            }
+                          ],
+                          "size": "75px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc51x_data",
+                              "mapping": "valve_1",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#2ecc71",
+                            "name": "Valve 1",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "led"
+                      },
+                      {
+                        "layout": {
+                          "col": 4,
+                          "row": 0,
+                          "sizeX": 2,
+                          "sizeY": 5
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Valve 2 Status"
+                        },
+                        "properties": {
+                          "color": "#4bd763",
+                          "colors": [
+                            {
+                              "blink": false,
+                              "color": "#95a5a6",
+                              "max": 0,
+                              "min": 0
+                            },
+                            {
+                              "blink": false,
+                              "color": "#2ecc71",
+                              "max": 1,
+                              "min": 1
+                            }
+                          ],
+                          "size": "75px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc51x_data",
+                              "mapping": "valve_2",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#2ecc71",
+                            "name": "Valve 2",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "led"
+                      },
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 5,
+                          "sizeX": 2,
+                          "sizeY": 5
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Valve 1 Pulse"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "enableExtraTextColor": false,
+                          "enableIconColor": false,
+                          "enableIconSize": false,
+                          "extraText": "",
+                          "extraTextColor": "#1E313E",
+                          "extraTextColorConditions": [],
+                          "extraTextConditions": [],
+                          "extraTextPosition": "above-value",
+                          "extraTextSize": "20px",
+                          "extraTextWeight": "font-light",
+                          "icon": "",
+                          "iconColor": "#1E313E",
+                          "iconColorConditions": [],
+                          "iconConditions": [],
+                          "iconGap": "8px",
+                          "iconPosition": "before-value",
+                          "iconSize": "75px",
+                          "iconVerticalOffset": "0px",
+                          "link": "",
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textColorConditions": [],
+                          "textSize": "50px",
+                          "textWeight": "font-light",
+                          "unit": "pulses",
+                          "unitSize": "16px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc51x_data",
+                              "mapping": "valve_1_pulse",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#3498db",
+                            "name": "Valve 1 Pulse",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 2,
+                          "row": 5,
+                          "sizeX": 2,
+                          "sizeY": 5
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Valve 2 Pulse"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "enableExtraTextColor": false,
+                          "enableIconColor": false,
+                          "enableIconSize": false,
+                          "extraText": "",
+                          "extraTextColor": "#1E313E",
+                          "extraTextColorConditions": [],
+                          "extraTextConditions": [],
+                          "extraTextPosition": "above-value",
+                          "extraTextSize": "20px",
+                          "extraTextWeight": "font-light",
+                          "icon": "",
+                          "iconColor": "#1E313E",
+                          "iconColorConditions": [],
+                          "iconConditions": [],
+                          "iconGap": "8px",
+                          "iconPosition": "before-value",
+                          "iconSize": "75px",
+                          "iconVerticalOffset": "0px",
+                          "link": "",
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textColorConditions": [],
+                          "textSize": "50px",
+                          "textWeight": "font-light",
+                          "unit": "pulses",
+                          "unitSize": "16px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc51x_data",
+                              "mapping": "valve_2_pulse",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#3498db",
+                            "name": "Valve 2 Pulse",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 4,
+                          "row": 5,
+                          "sizeX": 2,
+                          "sizeY": 5
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Pressure"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "enableExtraTextColor": false,
+                          "enableIconColor": false,
+                          "enableIconSize": false,
+                          "extraText": "",
+                          "extraTextColor": "#1E313E",
+                          "extraTextColorConditions": [],
+                          "extraTextConditions": [],
+                          "extraTextPosition": "above-value",
+                          "extraTextSize": "20px",
+                          "extraTextWeight": "font-light",
+                          "icon": "",
+                          "iconColor": "#1E313E",
+                          "iconColorConditions": [],
+                          "iconConditions": [],
+                          "iconGap": "8px",
+                          "iconPosition": "before-value",
+                          "iconSize": "75px",
+                          "iconVerticalOffset": "0px",
+                          "link": "",
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textColorConditions": [],
+                          "textSize": "50px",
+                          "textWeight": "font-light",
+                          "unit": "kPa",
+                          "unitSize": "16px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc51x_data",
+                              "mapping": "pressure",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#e74c3c",
+                            "name": "Pressure",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 10,
+                          "sizeX": 3,
+                          "sizeY": 10
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Valve Status (24h)"
+                        },
+                        "properties": {
+                          "alignTimeSeries": false,
+                          "dataAppend": false,
+                          "options": "var options = {\n    chart: {\n        type: 'line',\n        stacked: false\n    },\n    dataLabels: {\n        enabled: false\n    },\n    stroke: {\n        curve: 'stepline',\n        width: 2\n    },\n    xaxis: {\n        type: 'datetime',\n        labels: {\n            datetimeUTC: false\n        },\n        tooltip: {\n            enabled: false\n        }\n    },\n    yaxis: {\n        min: 0,\n        max: 1,\n        labels: {\n            formatter: function (val) {\n                return val === 1 ? 'Open' : 'Close';\n            }\n        }\n    },\n    tooltip: {\n        x: {\n            format: 'dd/MM/yyyy HH:mm:ss'\n        }\n    }\n};\n",
+                          "realTimeUpdate": true
+                        },
+                        "sources": [
+                          {
+                            "aggregation": {},
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc51x_data",
+                              "mapping": "valve_1",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#2ecc71",
+                            "name": "Valve 1",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          },
+                          {
+                            "aggregation": {},
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc51x_data",
+                              "mapping": "valve_2",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#3498db",
+                            "name": "Valve 2",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          }
+                        ],
+                        "type": "apex_charts"
+                      },
+                      {
+                        "layout": {
+                          "col": 3,
+                          "row": 10,
+                          "sizeX": 3,
+                          "sizeY": 10
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Pulse Count (24h)"
+                        },
+                        "properties": {
+                          "alignTimeSeries": false,
+                          "dataAppend": false,
+                          "options": "var options = {\n    chart: {\n        type: 'area',\n        stacked: false\n    },\n    dataLabels: {\n        enabled: false\n    },\n    stroke: {\n        curve: 'smooth'\n    },\n    xaxis: {\n        type: 'datetime',\n        labels: {\n            datetimeUTC: false\n        },\n        tooltip: {\n            enabled: false\n        }\n    },\n    yaxis: {\n        labels: {\n            formatter: function (val) {\n                if ( val !== null && typeof val !== 'undefined' )\n                    return val.toFixed(0);\n            }\n        }\n    },\n    tooltip: {\n        x: {\n            format: 'dd/MM/yyyy HH:mm:ss'\n        }\n    }\n};\n",
+                          "realTimeUpdate": true
+                        },
+                        "sources": [
+                          {
+                            "aggregation": {},
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc51x_data",
+                              "mapping": "valve_1_pulse",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#9b59b6",
+                            "name": "Valve 1 Pulse",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          },
+                          {
+                            "aggregation": {},
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc51x_data",
+                              "mapping": "valve_2_pulse",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#e67e22",
+                            "name": "Valve 2 Pulse",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          }
+                        ],
+                        "type": "apex_charts"
+                      },
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 20,
+                          "sizeX": 3,
+                          "sizeY": 8
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Battery (7 days)"
+                        },
+                        "properties": {
+                          "alignTimeSeries": false,
+                          "dataAppend": false,
+                          "options": "var options = {\n    chart: {\n        type: 'line'\n    },\n    dataLabels: {\n        enabled: false\n    },\n    stroke: {\n        curve: 'smooth'\n    },\n    xaxis: {\n        type: 'datetime',\n        labels: {\n            datetimeUTC: false\n        },\n        tooltip: {\n            enabled: false\n        }\n    },\n    yaxis: {\n        min: 0,\n        max: 100,\n        labels: {\n            formatter: function (val) {\n                if ( val !== null && typeof val !== 'undefined' )\n                    return val.toFixed(0) + '%';\n            }\n        }\n    },\n    tooltip: {\n        x: {\n            format: 'dd/MM/yyyy HH:mm:ss'\n        }\n    }\n};\n",
+                          "realTimeUpdate": true
+                        },
+                        "sources": [
+                          {
+                            "aggregation": {},
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc51x_data",
+                              "mapping": "battery",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#2ebd59",
+                            "name": "Battery",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "day",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 7
+                            }
+                          }
+                        ],
+                        "type": "apex_charts"
+                      },
+                      {
+                        "layout": {
+                          "col": 3,
+                          "row": 20,
+                          "sizeX": 3,
+                          "sizeY": 8
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Pressure (7 days)"
+                        },
+                        "properties": {
+                          "alignTimeSeries": false,
+                          "dataAppend": false,
+                          "options": "var options = {\n    chart: {\n        type: 'area'\n    },\n    dataLabels: {\n        enabled: false\n    },\n    stroke: {\n        curve: 'smooth'\n    },\n    xaxis: {\n        type: 'datetime',\n        labels: {\n            datetimeUTC: false\n        },\n        tooltip: {\n            enabled: false\n        }\n    },\n    yaxis: {\n        labels: {\n            formatter: function (val) {\n                if ( val !== null && typeof val !== 'undefined' )\n                    return val.toFixed(0) + ' kPa';\n            }\n        }\n    },\n    tooltip: {\n        x: {\n            format: 'dd/MM/yyyy HH:mm:ss'\n        }\n    }\n};\n",
+                          "realTimeUpdate": true
+                        },
+                        "sources": [
+                          {
+                            "aggregation": {},
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc51x_data",
+                              "mapping": "pressure",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#e74c3c",
+                            "name": "Pressure",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "day",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 7
+                            }
+                          }
+                        ],
+                        "type": "apex_charts"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
