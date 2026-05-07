@@ -1,7 +1,7 @@
 {
   "name": "milesight_iot_uc1152",
   "version": "1.0.0",
-  "description": "LoRa Controller",
+  "description": "The Milesight UC1152 is a professional LoRaWAN serial controller designed to bridge the gap between legacy industrial assets and the IoT ecosystem.",
   "author": "Thinger.io",
   "license": "MIT",
   "repository": {
@@ -11,7 +11,7 @@
   },
   "metadata": {
     "name": "Milesight-Iot UC1152",
-    "description": "LoRa Controller",
+    "description": "The Milesight UC1152 is a professional LoRaWAN serial controller designed to bridge the gap between legacy industrial assets and the IoT ecosystem.",
     "image": "assets/uc1152.png",
     "category": "devices",
     "vendor": "milesight-iot"
@@ -19,7 +19,7 @@
   "resources": {
     "products": [
       {
-        "description": "LoRa Controller",
+        "description": "The Milesight UC1152 is a professional LoRaWAN serial controller designed to bridge the gap between legacy industrial assets and the IoT ecosystem.",
         "enabled": true,
         "name": "Milesight-Iot UC1152",
         "product": "milesight_iot_uc1152",
