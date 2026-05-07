@@ -198,9 +198,8 @@ export class AlarmsComponent implements OnInit {
       for (const service of ['Data', 'Voice', 'Sms'] as const) {
         for (const pct of PERCENTAGES) {
           const key = `${period}${service}Threshold${pct}`;
-          if (v[key] !== null && v[key] !== undefined && v[key] !== '') {
-            payload[key] = Number(v[key]);
-          }
+          // API requires all threshold fields to be present; absent = 0 (disabled)
+          payload[key] = (v[key] !== null && v[key] !== undefined && v[key] !== '') ? Number(v[key]) : 0;
         }
       }
     }
@@ -210,6 +209,14 @@ export class AlarmsComponent implements OnInit {
   thresholdLabel(period: string, service: string, pct: number): string {
     return `${period === 'daily' ? 'Daily' : 'Monthly'} ${service} ${pct}%`;
   }
+
+  readonly levelMeta: Record<number, { label: string; tip: string }> = {
+    50:  { label: 'Alert 1', tip: 'First notice — earliest warning' },
+    60:  { label: 'Alert 2', tip: 'Second notice' },
+    80:  { label: 'Alert 3', tip: 'Warning — consumption is high' },
+    90:  { label: 'Alert 4', tip: 'High alert — approaching limit' },
+    100: { label: 'Alert 5', tip: 'Critical — limit reached' },
+  };
 
   alarmDetailEntries(): { key: string; value: any }[] {
     if (!this.selectedAlarm) return [];

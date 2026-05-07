@@ -105,8 +105,17 @@
       </div>
 
       <nz-divider nzText="Daily thresholds" nzOrientation="left"></nz-divider>
-      <div class="tw-text-xs tw-text-gray-500 tw-mb-3">
-        Values are the quantity limits (bytes for data, seconds for voice, count for SMS) at which the alarm triggers at each percentage of the daily threshold.
+      <div class="tw-text-xs tw-text-gray-500 tw-mb-3 tw-space-y-1">
+        <p>
+          Up to 5 escalating alerts per service. Enter the <strong>absolute consumption value</strong> at which each alert fires
+          (bytes for data, seconds for voice, number of messages for SMS).
+          Set a field to 0 to disable that alert.
+        </p>
+        <p class="tw-italic tw-text-gray-400">
+          Example — SIMs with a ~1 GB/day data plan: Alert 1 = 300 000 000 (~300 MB, first notice),
+          Alert 3 = 700 000 000 (~700 MB, warning), Alert 5 = 1 000 000 000 (~1 GB, critical).
+          Leave Alert 2 and Alert 4 at 0 if you don't need those intermediate steps.
+        </p>
       </div>
 
       <table class="tw-w-full tw-text-xs tw-mb-4 tw-border-collapse">
@@ -121,14 +130,17 @@
         <tbody>
           @for (pct of percentages; track pct) {
             <tr>
-              <td class="tw-p-2 tw-border tw-font-medium">{{ pct }}%</td>
+              <td class="tw-p-2 tw-border tw-font-medium tw-whitespace-nowrap"
+                  nz-tooltip [nzTooltipTitle]="levelMeta[pct].tip">
+                {{ levelMeta[pct].label }}
+              </td>
               @for (svc of ['Data', 'Voice', 'Sms']; track svc) {
                 <td class="tw-p-1 tw-border">
                   <nz-input-number
                     [formControlName]="'daily' + svc + 'Threshold' + pct"
                     [nzMin]="0"
                     [nzStep]="1"
-                    nzPlaceHolder="—"
+                    nzPlaceHolder="0 (off)"
                     class="tw-w-full">
                   </nz-input-number>
                 </td>
@@ -140,7 +152,8 @@
 
       <nz-divider nzText="Monthly thresholds" nzOrientation="left"></nz-divider>
       <div class="tw-text-xs tw-text-gray-500 tw-mb-3">
-        Same as daily thresholds but evaluated against monthly consumption totals.
+        Same 5 alerts as above, evaluated against the cumulative consumption for the entire month.
+        Example: Alert 5 = 30 000 000 000 (~30 GB) triggers a critical alert when a SIM exhausts its monthly data plan.
       </div>
 
       <table class="tw-w-full tw-text-xs tw-mb-2 tw-border-collapse">
@@ -155,14 +168,17 @@
         <tbody>
           @for (pct of percentages; track pct) {
             <tr>
-              <td class="tw-p-2 tw-border tw-font-medium">{{ pct }}%</td>
+              <td class="tw-p-2 tw-border tw-font-medium tw-whitespace-nowrap"
+                  nz-tooltip [nzTooltipTitle]="levelMeta[pct].tip">
+                {{ levelMeta[pct].label }}
+              </td>
               @for (svc of ['Data', 'Voice', 'Sms']; track svc) {
                 <td class="tw-p-1 tw-border">
                   <nz-input-number
                     [formControlName]="'monthly' + svc + 'Threshold' + pct"
                     [nzMin]="0"
                     [nzStep]="1"
-                    nzPlaceHolder="—"
+                    nzPlaceHolder="0 (off)"
                     class="tw-w-full">
                   </nz-input-number>
                 </td>
