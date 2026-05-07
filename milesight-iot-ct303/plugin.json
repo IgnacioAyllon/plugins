@@ -19,7 +19,7 @@
   "resources": {
     "products": [
       {
-        "description": ""The Milesight CT303 is a self-powered LoRaWAN® Current Transformer for remote energy monitoring. It features a non-invasive 100A split-core design, delivering high-accuracy consumption data and real-time threshold alarms without requiring batteries.",
+        "description": "The Milesight CT303 is a self-powered LoRaWAN® Current Transformer for remote energy monitoring. It features a non-invasive 100A split-core design, delivering high-accuracy consumption data and real-time threshold alarms without requiring batteries.",
         "enabled": true,
         "name": "Milesight-Iot CT303",
         "product": "milesight_iot_ct303",
