@@ -1,7 +1,7 @@
 {
   "name": "milesight_iot_uc1122",
   "version": "1.0.0",
-  "description": "LoRa Controller",
+  "description": "The Milesight UC1122 is a LoRaWAN remote I/O controller specifically designed for data acquisition from analog sensors and remote industrial equipment control.",
   "author": "Thinger.io",
   "license": "MIT",
   "repository": {
@@ -11,7 +11,7 @@
   },
   "metadata": {
     "name": "Milesight-Iot UC1122",
-    "description": "LoRa Controller",
+    "description": "The Milesight UC1122 is a LoRaWAN remote I/O controller specifically designed for data acquisition from analog sensors and remote industrial equipment control.",
     "image": "assets/uc1122.png",
     "category": "devices",
     "vendor": "milesight-iot"
@@ -19,7 +19,7 @@
   "resources": {
     "products": [
       {
-        "description": "LoRa Controller",
+        "description": "The Milesight UC1122 is a LoRaWAN remote I/O controller specifically designed for data acquisition from analog sensors and remote industrial equipment control.",
         "enabled": true,
         "name": "Milesight-Iot UC1122",
         "product": "milesight_iot_uc1122",
