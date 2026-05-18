@@ -1,559 +1,427 @@
 {
-  "name": "milesight_iot_ws101",
-  "version": "1.0.0",
-  "description": "LoRaWAN smart button for wireless controls, triggers and alarms. Supports customizable press actions to control devices or trigger scenes. Includes red SOS alarm button. Ideal for smart homes, offices, hotels, and schools.",
-  "author": "Thinger.io",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/thinger-io/plugins.git",
-    "directory": "milesight-iot-ws101"
-  },
-  "metadata": {
-    "name": "Milesight-Iot WS101",
+    "name": "Milesight-WS101",
+    "version": "1.0.0",
     "description": "LoRaWAN smart button for wireless controls, triggers and alarms. Supports customizable press actions to control devices or trigger scenes. Includes red SOS alarm button. Ideal for smart homes, offices, hotels, and schools.",
-    "image": "assets/ws101.png",
-    "category": "devices",
-    "vendor": "milesight-iot"
-  },
-  "resources": {
-    "products": [
-      {
+    "author": "Thinger.io",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/thinger-io/plugins.git",
+        "directory": "Milesight-WS101"
+    },
+    "metadata": {
+        "name": "Milesight WS101",
         "description": "LoRaWAN smart button for wireless controls, triggers and alarms. Supports customizable press actions to control devices or trigger scenes. Includes red SOS alarm button. Ideal for smart homes, offices, hotels, and schools.",
-        "enabled": true,
-        "name": "Milesight-Iot WS101",
-        "product": "milesight_iot_ws101",
-        "profile": {
-          "api": {
-            "downlink": {
-              "enabled": true,
-              "handle_connectivity": false,
-              "request": {
-                "data": {
-                  "path": "/downlink",
-                  "payload": "{\r\n    \"data\"    : \"{{payload.data=\"\"}}\",\r\n    \"port\"    :  {{payload.port=2}},\r\n    \"priority\":  {{payload.priority=3}},\r\n    \"confirmed\" :  {{payload.confirmed=false}},\r\n    \"uplink\"  :  {{property.uplink}} \r\n}",
-                  "payload_function": "",
-                  "payload_type": "",
-                  "plugin": "{{property.uplink.source}}",
-                  "target": "plugin_endpoint"
-                }
-              },
-              "response": {
-                "data": {
-                  "source": "request_response"
-                }
-              }
-            },
-            "uplink": {
-              "enabled": true,
-              "handle_connectivity": true,
-              "request": {
-                "data": {
-                  "payload": "{{payload}}",
-                  "payload_type": "source_payload",
-                  "resource_stream": "uplink",
-                  "target": "resource_stream"
-                }
-              },
-              "response": {
-                "data": {
-                  "source": "request_response"
-                }
-              }
-            }
-          },
-          "autoprovisions": {
-            "device_autoprovisioning": {
-              "config": {
-                "mode": "pattern",
-                "pattern": "ws101_.*"
-              },
-              "enabled": true
-            }
-          },
-          "buckets": {
-            "milesight_ws101_data": {
-              "backend": "mongodb",
-              "data": {
-                "payload": "{{payload}}",
-                "payload_type": "source_payload",
-                "resource_stream": "uplink_decoded",
-                "target": "resource_stream"
-              },
-              "enabled": true,
-              "retention": {
-                "period": 3,
-                "unit": "months"
-              },
-              "tags": []
-            }
-          },
-          "code": {
-            "code": "function decodeThingerUplink(thingerData) {\n    // 0. If data has already been decoded, we will return it\n    if (thingerData.decodedPayload) return thingerData.decodedPayload;\n    \n    // 1. Extract and Validate Input\n    // We need 'payload' (hex string) and 'fPort' (integer)\n    const hexPayload = thingerData.payload || \"\";\n    const port = thingerData.fPort || 1;\n\n    // 2. Convert Hex String to Byte Array\n    const bytes = [];\n    for (let i = 0; i < hexPayload.length; i += 2) {\n        bytes.push(parseInt(hexPayload.substr(i, 2), 16));\n    }\n\n    // 3. Dynamic Function Detection and Execution\n    \n    // CASE A: (The Things Stack v3)\n    if (typeof decodeUplink === 'function') {\n        try {\n            const input = {\n                bytes: bytes,\n                fPort: port\n            };\n            var result = decodeUplink(input);\n            \n            if (result.data) return result.data;\n\n            return result; \n        } catch (e) {\n            console.error(\"Error inside decodeUplink:\", e);\n            throw e;\n        }\n    }\n\n    // CASE B: Legacy TTN (v2)\n    else if (typeof Decoder === 'function') {\n        try {\n            return Decoder(bytes, port);\n        } catch (e) {\n            console.error(\"Error inside Decoder:\", e);\n            throw e;\n        }\n    }\n\n    // CASE C: No decoder found\n    else {\n        throw new Error(\"No compatible TTN decoder function (decodeUplink or Decoder) found in scope.\");\n    }\n}\n\n\n// TTN decoder\nfunction decodeUplink(input) {\n    var res = Decoder(input.bytes, input.fPort);\n    if (res.error) {\n        return {\n            errors: [res.error],\n        };\n    }\n    return {\n        data: res,\n    };\n}\n/**\n * Payload Decoder for The Things Network\n *\n * Copyright 2021 Milesight IoT\n *\n * @product WS101\n */\nfunction Decoder(bytes, port) {\n    var decoded = {};\n\n    for (var i = 0; i < bytes.length;) {\n        var channel_id = bytes[i++];\n        var channel_type = bytes[i++];\n        // BATTERY\n        if (channel_id === 0x01 && channel_type === 0x75) {\n            decoded.battery = bytes[i];\n            i += 1;\n        }\n        // PRESS STATE\n        else if (channel_id === 0xff && channel_type === 0x2e) {\n            switch (bytes[i]) {\n                case 1:\n                    decoded.button = \"short\";\n                    break;\n                case 2:\n                    decoded.button = \"long\";\n                    break;\n                case 3:\n                    decoded.button = \"double\";\n                    break;\n                default:\n                    console.log(\"unsupported\");\n            }\n            i += 1;\n        } else {\n            break;\n        }\n    }\n\n    return decoded;\n}\n",
-            "environment": "javascript",
-            "storage": "",
-            "version": "1.0"
-          },
-          "flows": {
-            "milesight_ws101_decoder": {
-              "data": {
-                "payload": "{{payload}}",
-                "payload_function": "decodeThingerUplink",
-                "payload_type": "source_payload",
-                "resource": "uplink",
-                "source": "resource",
-                "update": "events"
-              },
-              "enabled": true,
-              "sink": {
-                "payload": "{{payload}}",
-                "payload_type": "source_payload",
-                "resource_stream": "uplink_decoded",
-                "target": "resource_stream"
-              },
-              "split_data": false
-            }
-          },
-          "properties": {
-            "uplink": {
-              "data": {
-                "payload": "{{payload}}",
-                "payload_type": "source_payload",
-                "resource": "uplink",
-                "source": "resource",
-                "update": "events"
-              },
-              "default": {
-                "source": "value"
-              },
-              "enabled": true
-            }
-          }
-        },
-        "_resources": {
-          "properties": [
+        "image": "assets/ws101.png",
+        "category": "devices",
+        "vendor": "milesight-iot"
+    },
+    "resources": {
+        "products": [
             {
-              "property": "dashboard",
-              "value": {
-                "tabs": [
-                  {
-                    "name": "WS101",
-                    "widgets": [
-                      {
-                        "layout": {
-                          "col": 0,
-                          "row": 0,
-                          "sizeX": 2,
-                          "sizeY": 5
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "Battery"
-                        },
-                        "properties": {
-                          "decimalPlaces": 0,
-                          "enableExtraTextColor": false,
-                          "enableIconColor": false,
-                          "enableIconSize": false,
-                          "extraText": "",
-                          "extraTextColor": "#1E313E",
-                          "extraTextColorConditions": [],
-                          "extraTextConditions": [],
-                          "extraTextPosition": "above-value",
-                          "extraTextSize": "20px",
-                          "extraTextWeight": "font-light",
-                          "icon": "",
-                          "iconColor": "#1E313E",
-                          "iconColorConditions": [],
-                          "iconConditions": [],
-                          "iconGap": "8px",
-                          "iconPosition": "before-value",
-                          "iconSize": "75px",
-                          "iconVerticalOffset": "0px",
-                          "link": "",
-                          "textAlign": "center",
-                          "textColor": "#1E313E",
-                          "textColorConditions": [],
-                          "textSize": "75px",
-                          "textWeight": "font-light",
-                          "unit": "%",
-                          "unitSize": "20px"
-                        },
-                        "sources": [
-                          {
-                            "bucket": {
-                              "backend": "mongodb",
-                              "id": "milesight_ws101_data",
-                              "mapping": "battery",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
+                "config": {
+                    "icons": []
+                },
+                "description": "LoRaWAN smart button for wireless controls, triggers and alarms. Supports customizable press actions to control devices or trigger scenes. Includes red SOS alarm button. Ideal for smart homes, offices, hotels, and schools.",
+                "enabled": true,
+                "name": "Milesight WS101",
+                "product": "Milesight_WS101",
+                "profile": {
+                    "api": {
+                        "downlink": {
+                            "enabled": true,
+                            "handle_connectivity": false,
+                            "request": {
+                                "data": {
+                                    "path": "/downlink",
+                                    "payload": "{\r\n    \"data\"    : \"{{payload.data=\"\"}}\",\r\n    \"port\"    :  {{payload.port=2}},\r\n    \"priority\":  {{payload.priority=3}},\r\n    \"confirmed\" :  {{payload.confirmed=false}},\r\n    \"uplink\"  :  {{property.uplink}} \r\n}",
+                                    "payload_function": "",
+                                    "payload_type": "",
+                                    "plugin": "{{property.uplink.source}}",
+                                    "target": "plugin_endpoint"
+                                }
                             },
-                            "color": "#2ebd59",
-                            "name": "Battery",
-                            "source": "bucket",
-                            "timespan": {
-                              "mode": "latest"
+                            "response": {
+                                "data": {}
                             }
-                          }
-                        ],
-                        "type": "text"
-                      },
-                      {
-                        "layout": {
-                          "col": 2,
-                          "row": 0,
-                          "sizeX": 2,
-                          "sizeY": 5
                         },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "Last Button Event"
-                        },
-                        "properties": {
-                          "decimalPlaces": 0,
-                          "enableExtraTextColor": false,
-                          "enableIconColor": true,
-                          "enableIconSize": true,
-                          "extraText": "",
-                          "extraTextColor": "#1E313E",
-                          "extraTextColorConditions": [],
-                          "extraTextConditions": [],
-                          "extraTextPosition": "above-value",
-                          "extraTextSize": "20px",
-                          "extraTextWeight": "font-light",
-                          "icon": "fas fa-hand-pointer",
-                          "iconColor": "#1E313E",
-                          "iconColorConditions": [
-                            {
-                              "color": "#2ecc71",
-                              "max": "short press",
-                              "min": "short press"
+                        "uplink": {
+                            "enabled": true,
+                            "handle_connectivity": false,
+                            "request": {
+                                "data": {
+                                    "payload": "{{payload}}",
+                                    "payload_function": "",
+                                    "payload_type": "source_payload",
+                                    "resource_stream": "uplink",
+                                    "target": "resource_stream"
+                                }
                             },
-                            {
-                              "color": "#f1c40f",
-                              "max": "long press",
-                              "min": "long press"
-                            },
-                            {
-                              "color": "#e74c3c",
-                              "max": "double press",
-                              "min": "double press"
+                            "response": {
+                                "data": {}
                             }
-                          ],
-                          "iconConditions": [],
-                          "iconGap": "16px",
-                          "iconPosition": "above-value",
-                          "iconSize": "48px",
-                          "iconVerticalOffset": "0px",
-                          "link": "",
-                          "textAlign": "center",
-                          "textColor": "#1E313E",
-                          "textColorConditions": [
-                            {
-                              "color": "#2ecc71",
-                              "max": "short press",
-                              "min": "short press"
+                        }
+                    },
+                    "autoprovisions": {
+                        "device_autoprovisioning": {
+                            "config": {
+                                "mode": "pattern",
+                                "pattern": "ws101_.*"
                             },
-                            {
-                              "color": "#f1c40f",
-                              "max": "long press",
-                              "min": "long press"
+                            "enabled": true
+                        }
+                    },
+                    "buckets": {
+                        "milesight_ws101_data": {
+                            "backend": "mongodb",
+                            "data": {
+                                "payload": "{{payload}}",
+                                "payload_function": "",
+                                "payload_type": "source_payload",
+                                "resource_stream": "uplink_decoded",
+                                "source": "resource_stream"
                             },
-                            {
-                              "color": "#e74c3c",
-                              "max": "double press",
-                              "min": "double press"
+                            "enabled": true,
+                            "retention": {
+                                "period": 3,
+                                "unit": "months"
+                            },
+                            "tags": []
+                        }
+                    },
+                    "code": {
+                        "code": "function decodeThingerUplink(thingerData) {\r\n    // 0. If data has already been decoded, we will return it\r\n    if (thingerData.decodedPayload) return thingerData.decodedPayload;\r\n    \r\n    // 1. Extract and Validate Input\r\n    // We need 'payload' (hex string) and 'fPort' (integer)\r\n    const hexPayload = thingerData.payload || \"\";\r\n    const port = thingerData.fPort || 1;\r\n\r\n    // 2. Convert Hex String to Byte Array\r\n    const bytes = [];\r\n    for (let i = 0; i < hexPayload.length; i += 2) {\r\n        bytes.push(parseInt(hexPayload.substr(i, 2), 16));\r\n    }\r\n\r\n    // 3. Dynamic Function Detection and Execution\r\n    \r\n    // CASE A: (The Things Stack v3)\r\n    if (typeof decodeUplink === 'function') {\r\n        try {\r\n            const input = {\r\n                bytes: bytes,\r\n                fPort: port\r\n            };\r\n            var result = decodeUplink(input);\r\n            \r\n            if (result.data) return result.data;\r\n\r\n            return result; \r\n        } catch (e) {\r\n            console.error(\"Error inside decodeUplink:\", e);\r\n            throw e;\r\n        }\r\n    }\r\n\r\n    // CASE B: Legacy TTN (v2)\r\n    else if (typeof Decoder === 'function') {\r\n        try {\r\n            return Decoder(bytes, port);\r\n        } catch (e) {\r\n            console.error(\"Error inside Decoder:\", e);\r\n            throw e;\r\n        }\r\n    }\r\n\r\n    // CASE C: No decoder found\r\n    else {\r\n        throw new Error(\"No compatible TTN decoder function (decodeUplink or Decoder) found in scope.\");\r\n    }\r\n}\r\n\r\n\r\n\r\n/**\r\n * Payload Decoder\r\n *\r\n * Copyright 2025 Milesight IoT\r\n *\r\n * @product WS101\r\n */\r\nvar RAW_VALUE = 0x00;\r\n\r\n/* eslint no-redeclare: \"off\" */\r\n/* eslint-disable */\r\n// Chirpstack v4\r\nfunction decodeUplink(input) {\r\n    var decoded = milesightDeviceDecode(input.bytes);\r\n    return { data: decoded };\r\n}\r\n\r\n// Chirpstack v3\r\nfunction Decode(fPort, bytes) {\r\n    return milesightDeviceDecode(bytes);\r\n}\r\n\r\n// The Things Network\r\nfunction Decoder(bytes, port) {\r\n    return milesightDeviceDecode(bytes);\r\n}\r\n/* eslint-enable */\r\n\r\nfunction milesightDeviceDecode(bytes) {\r\n    var decoded = {};\r\n\r\n    for (var i = 0; i < bytes.length;) {\r\n        var channel_id = bytes[i++];\r\n        var channel_type = bytes[i++];\r\n\r\n        // IPSO VERSION\r\n        if (channel_id === 0xff && channel_type === 0x01) {\r\n            decoded.ipso_version = readProtocolVersion(bytes[i]);\r\n            i += 1;\r\n        }\r\n        // HARDWARE VERSION\r\n        else if (channel_id === 0xff && channel_type === 0x09) {\r\n            decoded.hardware_version = readHardwareVersion(bytes.slice(i, i + 2));\r\n            i += 2;\r\n        }\r\n        // FIRMWARE VERSION\r\n        else if (channel_id === 0xff && channel_type === 0x0a) {\r\n            decoded.firmware_version = readFirmwareVersion(bytes.slice(i, i + 2));\r\n            i += 2;\r\n        }\r\n        // TSL VERSION\r\n        else if (channel_id === 0xff && channel_type === 0xff) {\r\n            decoded.tsl_version = readTslVersion(bytes.slice(i, i + 2));\r\n            i += 2;\r\n        }\r\n        // SERIAL NUMBER\r\n        else if (channel_id === 0xff && channel_type === 0x08) {\r\n            decoded.sn = readSerialNumber(bytes.slice(i, i + 6));\r\n            i += 6;\r\n        }\r\n        // LORAWAN CLASS TYPE\r\n        else if (channel_id === 0xff && channel_type === 0x0f) {\r\n            decoded.lorawan_class = readLoRaWANClass(bytes[i]);\r\n            i += 1;\r\n        }\r\n        // RESET EVENT\r\n        else if (channel_id === 0xff && channel_type === 0xfe) {\r\n            decoded.reset_event = readResetEvent(1);\r\n            i += 1;\r\n        }\r\n        // DEVICE STATUS\r\n        else if (channel_id === 0xff && channel_type === 0x0b) {\r\n            decoded.device_status = readDeviceStatus(1);\r\n            i += 1;\r\n        }\r\n\r\n        // BATTERY\r\n        else if (channel_id === 0x01 && channel_type === 0x75) {\r\n            decoded.battery = readUInt8(bytes[i]);\r\n            i += 1;\r\n        }\r\n        // PRESS STATE\r\n        else if (channel_id === 0xff && channel_type === 0x2e) {\r\n            decoded.button_event = {};\r\n            decoded.button_event.status = readButtonEvent(bytes[i]);\r\n            decoded.button_event.msgid = getRandomIntInclusive(100000, 999999);\r\n            i += 1;\r\n        }\r\n        // DOWNLINK RESPONSE\r\n        else if (channel_id === 0xfe || channel_id === 0xff) {\r\n            var result = handle_downlink_response(channel_type, bytes, i);\r\n            decoded = Object.assign(decoded, result.data);\r\n            i = result.offset;\r\n        } else {\r\n            break;\r\n        }\r\n    }\r\n\r\n    return decoded;\r\n}\r\n\r\nfunction handle_downlink_response(channel_type, bytes, offset) {\r\n    var decoded = {};\r\n\r\n    switch (channel_type) {\r\n        case 0x03:\r\n            decoded.reporting_interval = readUInt16LE(bytes.slice(offset, offset + 2));\r\n            offset += 2;\r\n            break;\r\n        case 0x10:\r\n            decoded.reboot = readYesNoStatus(1);\r\n            offset += 1;\r\n            break;\r\n        case 0x28:\r\n            decoded.query_device_status = readYesNoStatus(1);\r\n            offset += 1;\r\n            break;\r\n        case 0x2f:\r\n            decoded.led_indicator_enable = readEnableStatus(bytes[offset]);\r\n            offset += 1;\r\n            break;\r\n        case 0x3e:\r\n            decoded.buzzer_enable = readEnableStatus(bytes[offset]);\r\n            offset += 1;\r\n            break;\r\n        case 0x74:\r\n            decoded.double_click_enable = readEnableStatus(bytes[offset]);\r\n            offset += 1;\r\n            break;\r\n        default:\r\n            throw new Error(\"unknown downlink response\");\r\n    }\r\n\r\n    return { data: decoded, offset: offset };\r\n}\r\n\r\nfunction readProtocolVersion(bytes) {\r\n    var major = (bytes & 0xf0) >> 4;\r\n    var minor = bytes & 0x0f;\r\n    return \"v\" + major + \".\" + minor;\r\n}\r\n\r\nfunction readHardwareVersion(bytes) {\r\n    var major = (bytes[0] & 0xff).toString(16);\r\n    var minor = (bytes[1] & 0xff) >> 4;\r\n    return \"v\" + major + \".\" + minor;\r\n}\r\n\r\nfunction readFirmwareVersion(bytes) {\r\n    var major = (bytes[0] & 0xff).toString(16);\r\n    var minor = (bytes[1] & 0xff).toString(16);\r\n    return \"v\" + major + \".\" + minor;\r\n}\r\n\r\nfunction readTslVersion(bytes) {\r\n    var major = bytes[0] & 0xff;\r\n    var minor = bytes[1] & 0xff;\r\n    return \"v\" + major + \".\" + minor;\r\n}\r\n\r\nfunction readSerialNumber(bytes) {\r\n    var temp = [];\r\n    for (var idx = 0; idx < bytes.length; idx++) {\r\n        temp.push((\"0\" + (bytes[idx] & 0xff).toString(16)).slice(-2));\r\n    }\r\n    return temp.join(\"\");\r\n}\r\n\r\nfunction readLoRaWANClass(type) {\r\n    var class_map = {\r\n        0: \"Class A\",\r\n        1: \"Class B\",\r\n        2: \"Class C\",\r\n        3: \"Class CtoB\",\r\n    };\r\n    return getValue(class_map, type);\r\n}\r\n\r\nfunction readResetEvent(status) {\r\n    var status_map = { 0: \"normal\", 1: \"reset\" };\r\n    return getValue(status_map, status);\r\n}\r\n\r\nfunction readDeviceStatus(status) {\r\n    var status_map = { 0: \"off\", 1: \"on\" };\r\n    return getValue(status_map, status);\r\n}\r\n\r\nfunction readButtonEvent(status) {\r\n    var status_map = { 1: \"short press\", 2: \"long press\", 3: \"double press\" };\r\n    return getValue(status_map, status);\r\n}\r\n\r\nfunction readEnableStatus(status) {\r\n    var status_map = { 0: \"disable\", 1: \"enable\" };\r\n    return getValue(status_map, status);\r\n}\r\n\r\nfunction readYesNoStatus(status) {\r\n    var status_map = { 0: \"no\", 1: \"yes\" };\r\n    return getValue(status_map, status);\r\n}\r\n\r\nfunction getRandomIntInclusive(min, max) {\r\n    min = Math.ceil(min);\r\n    max = Math.floor(max);\r\n    return Math.floor(Math.random() * (max - min + 1)) + min;\r\n}\r\n\r\n/* eslint-disable */\r\nfunction readUInt8(bytes) {\r\n    return bytes & 0xff;\r\n}\r\n\r\nfunction readInt8(bytes) {\r\n    var ref = readUInt8(bytes);\r\n    return ref > 0x7f ? ref - 0x100 : ref;\r\n}\r\n\r\nfunction readUInt16LE(bytes) {\r\n    var value = (bytes[1] << 8) + bytes[0];\r\n    return value & 0xffff;\r\n}\r\n\r\nfunction readInt16LE(bytes) {\r\n    var ref = readUInt16LE(bytes);\r\n    return ref > 0x7fff ? ref - 0x10000 : ref;\r\n}\r\n\r\nfunction getValue(map, key) {\r\n    if (RAW_VALUE) return key;\r\n\r\n    var value = map[key];\r\n    if (!value) value = \"unknown\";\r\n    return value;\r\n}\r\n\r\n//if (!Object.assign) {\r\n    Object.defineProperty(Object, \"assign\", {\r\n        enumerable: false,\r\n        configurable: true,\r\n        writable: true,\r\n        value: function (target) {\r\n            \"use strict\";\r\n            if (target == null) {\r\n                throw new TypeError(\"Cannot convert first argument to object\");\r\n            }\r\n\r\n            var to = Object(target);\r\n            for (var i = 1; i < arguments.length; i++) {\r\n                var nextSource = arguments[i];\r\n                if (nextSource == null) {\r\n                    continue;\r\n                }\r\n                nextSource = Object(nextSource);\r\n\r\n                var keysArray = Object.keys(Object(nextSource));\r\n                for (var nextIndex = 0, len = keysArray.length; nextIndex < len; nextIndex++) {\r\n                    var nextKey = keysArray[nextIndex];\r\n                    var desc = Object.getOwnPropertyDescriptor(nextSource, nextKey);\r\n                    if (desc !== undefined && desc.enumerable) {\r\n                        // concat array\r\n                        if (Array.isArray(to[nextKey]) && Array.isArray(nextSource[nextKey])) {\r\n                            to[nextKey] = to[nextKey].concat(nextSource[nextKey]);\r\n                        } else {\r\n                            to[nextKey] = nextSource[nextKey];\r\n                        }\r\n                    }\r\n                }\r\n            }\r\n            return to;\r\n        },\r\n    });\r\n//}",
+                        "environment": "javascript",
+                        "storage": "",
+                        "version": "1.0"
+                    },
+                    "flows": {
+                        "milesight_ws101_decoder": {
+                            "data": {
+                                "payload": "{{payload}}",
+                                "payload_function": "decodeThingerUplink",
+                                "payload_type": "source_payload",
+                                "resource": "uplink",
+                                "source": "resource",
+                                "update": "events"
+                            },
+                            "enabled": true,
+                            "handle_connectivity": false,
+                            "sink": {
+                                "payload": "{{payload}}",
+                                "payload_function": "",
+                                "payload_type": "source_payload",
+                                "resource_stream": "uplink_decoded",
+                                "target": "resource_stream"
+                            },
+                            "split_data": false
+                        }
+                    },
+                    "properties": {
+                        "uplink": {
+                            "data": {
+                                "payload": "{{payload}}",
+                                "payload_function": "",
+                                "payload_type": "source_payload",
+                                "resource": "uplink",
+                                "source": "resource",
+                                "update": "events"
+                            },
+                            "default": {
+                                "source": "value"
+                            },
+                            "description": "Last raw uplink",
+                            "enabled": true
+                        }
+                    }
+                },
+                "_resources": {
+                    "properties": [
+                        {
+                            "property": "dashboard",
+                            "value": {
+                                "functions": "function buttonPressToCode(pressType) {\r\n    switch ((pressType || \"\").toLowerCase()) {\r\n        case \"short press\":\r\n            return 1;\r\n        case \"long press\":\r\n            return 2;\r\n        case \"double press\":\r\n            return 3;\r\n        default:\r\n            return 0; // valor por defecto si no coincide\r\n    }\r\n}",
+                                "name": "WS101",
+                                "placeholders": {
+                                    "sources": []
+                                },
+                                "properties": {
+                                    "template": true
+                                },
+                                "tabs": [
+                                    {
+                                        "icon": "fas fa-tachometer-alt",
+                                        "widgets": [
+                                            {
+                                                "layout": {
+                                                    "col": 0,
+                                                    "row": 0,
+                                                    "sizeX": 3,
+                                                    "sizeY": 6
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "Battery"
+                                                },
+                                                "properties": {
+                                                    "color": "#21c023",
+                                                    "gradient": false,
+                                                    "max": 100,
+                                                    "min": 0,
+                                                    "unit": "%"
+                                                },
+                                                "sources": [
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "mongodb",
+                                                            "id": "milesight_ws101_data",
+                                                            "mapping": "battery",
+                                                            "tags": {
+                                                                "device": [
+                                                                    "ws101_14A721C7037B4501"
+                                                                ],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#1abc9c",
+                                                        "name": "Source 1",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "mode": "latest"
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "gauge"
+                                            },
+                                            {
+                                                "layout": {
+                                                    "col": 0,
+                                                    "row": 6,
+                                                    "sizeX": 6,
+                                                    "sizeY": 7
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "Last 7 days"
+                                                },
+                                                "properties": {
+                                                    "source": "code",
+                                                    "template": "<div style=\"width:100%; height:100%; overflow-y:auto\">\r\n  <table class=\"table table-striped table-condensed\">\r\n    <thead>\r\n      <tr>\r\n        <th>Date</th>\r\n        <th>Battery (%)</th>\r\n        <th>Button Event</th>\r\n      </tr>\r\n    </thead>\r\n    <tbody>\r\n      <tr ng-repeat=\"entry in value\">\r\n        <td>{{ entry.ts | date:'medium' }}</td>\r\n        <td>{{ entry.battery || '—' }}</td>\r\n        <td>{{ entry.button_status || entry.button_event.status || '—' }}</td>\r\n      </tr>\r\n    </tbody>\r\n  </table>\r\n</div>"
+                                                },
+                                                "sources": [
+                                                    {
+                                                        "aggregation": {},
+                                                        "bucket": {
+                                                            "backend": "mongodb",
+                                                            "id": "milesight_ws101_data",
+                                                            "mapping": "ts",
+                                                            "tags": {
+                                                                "device": [
+                                                                    "ws101_14A721C7037B4501"
+                                                                ],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#1abc9c",
+                                                        "name": "ts",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "magnitude": "day",
+                                                            "mode": "relative",
+                                                            "period": "latest",
+                                                            "value": 7
+                                                        }
+                                                    },
+                                                    {
+                                                        "aggregation": {},
+                                                        "bucket": {
+                                                            "backend": "mongodb",
+                                                            "id": "milesight_ws101_data",
+                                                            "mapping": "battery",
+                                                            "tags": {
+                                                                "device": [
+                                                                    "ws101_14A721C7037B4501"
+                                                                ],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#2ecc71",
+                                                        "name": "battery",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "magnitude": "day",
+                                                            "mode": "relative",
+                                                            "period": "latest",
+                                                            "value": 7
+                                                        }
+                                                    },
+                                                    {
+                                                        "aggregation": {},
+                                                        "bucket": {
+                                                            "backend": "mongodb",
+                                                            "id": "milesight_ws101_data",
+                                                            "mapping": "button_event.status",
+                                                            "tags": {
+                                                                "device": [
+                                                                    "ws101_14A721C7037B4501"
+                                                                ],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#3498db",
+                                                        "name": "button_status",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "magnitude": "day",
+                                                            "mode": "relative",
+                                                            "period": "latest",
+                                                            "value": 7
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "html_time"
+                                            },
+                                            {
+                                                "layout": {
+                                                    "col": 3,
+                                                    "row": 0,
+                                                    "sizeX": 3,
+                                                    "sizeY": 6
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "State of button"
+                                                },
+                                                "type": "group_widget",
+                                                "widgets": [
+                                                    {
+                                                        "layout": {
+                                                            "col": 0,
+                                                            "row": 0,
+                                                            "sizeX": 3,
+                                                            "sizeY": 5
+                                                        },
+                                                        "panel": {
+                                                            "color": "#ffffff",
+                                                            "currentColor": "#ffffff",
+                                                            "showOffline": {
+                                                                "type": "none"
+                                                            },
+                                                            "title": "Explanation"
+                                                        },
+                                                        "properties": {
+                                                            "file": "index.html",
+                                                            "source": "code",
+                                                            "template": "<div style=\"width:200px; margin:20px auto; font-family:Arial, sans-serif;\">\r\n  <div style=\"padding:10px; background-color:#2ecc71; color:#fff; text-align:center; margin-bottom:5px; border-radius:5px;\">\r\n    Short Press\r\n  </div>\r\n  <div style=\"padding:10px; background-color:#f1c40f; color:#fff; text-align:center; margin-bottom:5px; border-radius:5px;\">\r\n    Long Press\r\n  </div>\r\n  <div style=\"padding:10px; background-color:#e74c3c; color:#fff; text-align:center; border-radius:5px;\">\r\n    Double Press\r\n  </div>\r\n</div>"
+                                                        },
+                                                        "sources": [
+                                                            {
+                                                                "bucket": {
+                                                                    "backend": "mongodb",
+                                                                    "id": "milesight_ws101_data",
+                                                                    "mapping": "device",
+                                                                    "tags": {
+                                                                        "device": [],
+                                                                        "group": []
+                                                                    }
+                                                                },
+                                                                "color": "#1abc9c",
+                                                                "name": "Source 1",
+                                                                "source": "bucket",
+                                                                "timespan": {
+                                                                    "mode": "latest"
+                                                                }
+                                                            }
+                                                        ],
+                                                        "type": "html_time"
+                                                    },
+                                                    {
+                                                        "layout": {
+                                                            "col": 3,
+                                                            "row": 0,
+                                                            "sizeX": 3,
+                                                            "sizeY": 5
+                                                        },
+                                                        "panel": {
+                                                            "color": "#ffffff",
+                                                            "currentColor": "#ffffff",
+                                                            "showOffline": {
+                                                                "type": "none"
+                                                            },
+                                                            "title": "Status"
+                                                        },
+                                                        "properties": {
+                                                            "color": "#4bd763",
+                                                            "colors": [
+                                                                {
+                                                                    "blink": true,
+                                                                    "color": "#00ff00",
+                                                                    "max": 1,
+                                                                    "min": 0
+                                                                },
+                                                                {
+                                                                    "blink": true,
+                                                                    "color": "#f1f50f",
+                                                                    "max": 2,
+                                                                    "min": 2
+                                                                },
+                                                                {
+                                                                    "blink": true,
+                                                                    "color": "#d71d1d",
+                                                                    "max": 3,
+                                                                    "min": 3
+                                                                }
+                                                            ],
+                                                            "size": "75px"
+                                                        },
+                                                        "sources": [
+                                                            {
+                                                                "bucket": {
+                                                                    "backend": "mongodb",
+                                                                    "id": "milesight_ws101_data",
+                                                                    "mapping": "button_event.status",
+                                                                    "tags": {
+                                                                        "device": [
+                                                                            "ws101_14A721C7037B4501"
+                                                                        ],
+                                                                        "group": []
+                                                                    }
+                                                                },
+                                                                "color": "#1abc9c",
+                                                                "name": "Source 1",
+                                                                "processing": {
+                                                                    "input": "buttonPressToCode"
+                                                                },
+                                                                "source": "bucket",
+                                                                "timespan": {
+                                                                    "mode": "latest"
+                                                                }
+                                                            }
+                                                        ],
+                                                        "type": "led"
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
                             }
-                          ],
-                          "textSize": "32px",
-                          "textWeight": "font-light",
-                          "unit": "",
-                          "unitSize": "20px"
-                        },
-                        "sources": [
-                          {
-                            "bucket": {
-                              "backend": "mongodb",
-                              "id": "milesight_ws101_data",
-                              "mapping": "button_event.status",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#3498db",
-                            "name": "Button Status",
-                            "source": "bucket",
-                            "timespan": {
-                              "mode": "latest"
-                            }
-                          }
-                        ],
-                        "type": "text"
-                      },
-                      {
-                        "layout": {
-                          "col": 4,
-                          "row": 0,
-                          "sizeX": 2,
-                          "sizeY": 5
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "Battery Level"
-                        },
-                        "properties": {
-                          "color": "#2ebd59",
-                          "gradient": false,
-                          "max": 100,
-                          "min": 0,
-                          "unit": "%"
-                        },
-                        "sources": [
-                          {
-                            "bucket": {
-                              "backend": "mongodb",
-                              "id": "milesight_ws101_data",
-                              "mapping": "battery",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#2ebd59",
-                            "name": "Battery",
-                            "source": "bucket",
-                            "timespan": {
-                              "mode": "latest"
-                            }
-                          }
-                        ],
-                        "type": "gauge"
-                      },
-                      {
-                        "layout": {
-                          "col": 0,
-                          "row": 5,
-                          "sizeX": 3,
-                          "sizeY": 8
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "Battery Level (7 days)"
-                        },
-                        "properties": {
-                          "alignTimeSeries": false,
-                          "dataAppend": false,
-                          "options": "var options = {\n    chart: {\n        type: 'area'\n    },\n    dataLabels: {\n        enabled: false\n    },\n    stroke: {\n        curve: 'smooth'\n    },\n    xaxis: {\n        type: 'datetime',\n        labels: {\n            datetimeUTC: false\n        },\n        tooltip: {\n            enabled: false\n        }\n    },\n    yaxis: {\n        min: 0,\n        max: 100,\n        labels: {\n            formatter: function (val) {\n                if (val !== null && typeof val !== 'undefined')\n                    return val.toFixed(0) + '%';\n            }\n        }\n    },\n    tooltip: {\n        x: {\n            format: 'dd/MM/yyyy HH:mm:ss'\n        }\n    }\n};\n",
-                          "realTimeUpdate": true
-                        },
-                        "sources": [
-                          {
-                            "aggregation": {},
-                            "bucket": {
-                              "backend": "mongodb",
-                              "id": "milesight_ws101_data",
-                              "mapping": "battery",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#2ebd59",
-                            "name": "Battery",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "day",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 7
-                            }
-                          }
-                        ],
-                        "type": "apex_charts"
-                      },
-                      {
-                        "layout": {
-                          "col": 3,
-                          "row": 5,
-                          "sizeX": 3,
-                          "sizeY": 8
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "Button Events (7 days)"
-                        },
-                        "properties": {
-                          "alignTimeSeries": false,
-                          "dataAppend": false,
-                          "options": "var options = {\n    chart: {\n        type: 'bar'\n    },\n    plotOptions: {\n        bar: {\n            horizontal: false,\n            columnWidth: '55%',\n            endingShape: 'rounded'\n        }\n    },\n    dataLabels: {\n        enabled: false\n    },\n    xaxis: {\n        type: 'datetime',\n        labels: {\n            datetimeUTC: false\n        },\n        tooltip: {\n            enabled: false\n        }\n    },\n    yaxis: {\n        labels: {\n            formatter: function (val) {\n                return val.toFixed(0);\n            }\n        }\n    },\n    tooltip: {\n        x: {\n            format: 'dd/MM/yyyy HH:mm:ss'\n        }\n    }\n};\n",
-                          "realTimeUpdate": true
-                        },
-                        "sources": [
-                          {
-                            "aggregation": {
-                              "interval": "1h",
-                              "method": "count"
-                            },
-                            "bucket": {
-                              "backend": "mongodb",
-                              "id": "milesight_ws101_data",
-                              "mapping": "button_event.msgid",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#3498db",
-                            "name": "Events Count",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "day",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 7
-                            }
-                          }
-                        ],
-                        "type": "apex_charts"
-                      },
-                      {
-                        "layout": {
-                          "col": 0,
-                          "row": 13,
-                          "sizeX": 6,
-                          "sizeY": 7
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "Button Event History (Last 7 Days)"
-                        },
-                        "properties": {
-                          "source": "code",
-                          "template": "<div style=\"width:100%; height:100%; overflow-y:auto; padding:10px;\">\n  <table class=\"table table-striped table-condensed\">\n    <thead>\n      <tr>\n        <th style=\"width:40%\">Timestamp</th>\n        <th style=\"width:30%\">Button Event</th>\n        <th style=\"width:15%\">Battery (%)</th>\n        <th style=\"width:15%\">Message ID</th>\n      </tr>\n    </thead>\n    <tbody>\n      <tr ng-repeat=\"entry in value\" ng-if=\"entry.button_status\">\n        <td>{{ entry.ts | date:'dd/MM/yyyy HH:mm:ss' }}</td>\n        <td>\n          <span ng-if=\"entry.button_status === 'short press'\" style=\"padding:4px 8px; background-color:#2ecc71; color:#fff; border-radius:4px; font-size:12px;\">\n            Short Press\n          </span>\n          <span ng-if=\"entry.button_status === 'long press'\" style=\"padding:4px 8px; background-color:#f1c40f; color:#fff; border-radius:4px; font-size:12px;\">\n            Long Press\n          </span>\n          <span ng-if=\"entry.button_status === 'double press'\" style=\"padding:4px 8px; background-color:#e74c3c; color:#fff; border-radius:4px; font-size:12px;\">\n            Double Press\n          </span>\n        </td>\n        <td>{{ entry.battery || '—' }}</td>\n        <td>{{ entry.msgid || '—' }}</td>\n      </tr>\n      <tr ng-if=\"value.length === 0\">\n        <td colspan=\"4\" style=\"text-align:center; padding:20px;\">No button events recorded</td>\n      </tr>\n    </tbody>\n  </table>\n</div>"
-                        },
-                        "sources": [
-                          {
-                            "aggregation": {},
-                            "bucket": {
-                              "backend": "mongodb",
-                              "id": "milesight_ws101_data",
-                              "mapping": "ts",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#1abc9c",
-                            "name": "ts",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "day",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 7
-                            }
-                          },
-                          {
-                            "aggregation": {},
-                            "bucket": {
-                              "backend": "mongodb",
-                              "id": "milesight_ws101_data",
-                              "mapping": "battery",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#2ebd59",
-                            "name": "battery",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "day",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 7
-                            }
-                          },
-                          {
-                            "aggregation": {},
-                            "bucket": {
-                              "backend": "mongodb",
-                              "id": "milesight_ws101_data",
-                              "mapping": "button_event.status",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#3498db",
-                            "name": "button_status",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "day",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 7
-                            }
-                          },
-                          {
-                            "aggregation": {},
-                            "bucket": {
-                              "backend": "mongodb",
-                              "id": "milesight_ws101_data",
-                              "mapping": "button_event.msgid",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#9b59b6",
-                            "name": "msgid",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "day",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 7
-                            }
-                          }
-                        ],
-                        "type": "html_time"
-                      }
+                        }
                     ]
-                  }
-                ]
-              }
+                }
             }
-          ]
-        }
-      }
-    ]
-  }
+        ]
+    }
 }
