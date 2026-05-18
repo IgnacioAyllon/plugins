@@ -1,0 +1,1151 @@
+{
+  "name": "milesight_iot_vs373",
+  "version": "1.0.0",
+  "description": "VS373 is a Radar Fall Detection Sensor that adopts a Millimeter Wave Radar to detect fall. It enables non-contact human detection using point cloud data and triggers fall alarms",
+  "author": "Thinger.io",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thinger-io/plugins.git",
+    "directory": "milesight-iot-vs373"
+  },
+  "metadata": {
+    "name": "Milesight-Iot VS373",
+    "description": "VS373 is a Radar Fall Detection Sensor that adopts a Millimeter Wave Radar to detect fall. It enables non-contact human detection using point cloud data and triggers fall alarms",
+    "image": "assets/vs373.png",
+    "category": "devices",
+    "vendor": "milesight-iot"
+  },
+  "resources": {
+    "products": [
+      {
+        "description": "VS373 is a Radar Fall Detection Sensor that adopts a Millimeter Wave Radar to detect fall. It enables non-contact human detection using point cloud data and triggers fall alarms",
+        "enabled": true,
+        "name": "Milesight-Iot VS373",
+        "product": "milesight_iot_vs373",
+        "profile": {
+          "api": {
+            "downlink": {
+              "enabled": true,
+              "handle_connectivity": false,
+              "request": {
+                "data": {
+                  "path": "/downlink",
+                  "payload": "{\r\n    \"data\"    : \"{{payload.data=\"\"}}\",\r\n    \"port\"    :  {{payload.port=2}},\r\n    \"priority\":  {{payload.priority=3}},\r\n    \"confirmed\" :  {{payload.confirmed=false}},\r\n    \"uplink\"  :  {{property.uplink}} \r\n}",
+                  "payload_function": "",
+                  "payload_type": "",
+                  "plugin": "{{property.uplink.source}}",
+                  "target": "plugin_endpoint"
+                }
+              }
+            },
+            "uplink": {
+              "enabled": true,
+              "handle_connectivity": true,
+              "request": {
+                "data": {
+                  "payload": "{{payload}}",
+                  "payload_function": "",
+                  "payload_type": "source_payload",
+                  "resource_stream": "uplink",
+                  "target": "resource_stream"
+                }
+              }
+            }
+          },
+          "autoprovisions": {
+            "device_autoprovisioning": {
+              "config": {
+                "mode": "pattern",
+                "pattern": "vs373_.*"
+              },
+              "enabled": true
+            }
+          },
+          "buckets": {
+            "milesight_vs373_data": {
+              "backend": "mongodb",
+              "data": {
+                "payload": "{{payload}}",
+                "payload_function": "",
+                "payload_type": "source_payload",
+                "resource_stream": "uplink_decoded",
+                "target": "resource_stream"
+              },
+              "enabled": true,
+              "retention": {
+                "period": 3,
+                "unit": "months"
+              },
+              "tags": []
+            }
+          },
+          "code": {
+            "code": "function decodeThingerUplink(thingerData) {\n    // 0. If data has already been decoded, we will return it\n    if (thingerData.decodedPayload) return thingerData.decodedPayload;\n    \n    // 1. Extract and Validate Input\n    // We need 'payload' (hex string) and 'fPort' (integer)\n    const hexPayload = thingerData.payload || \"\";\n    const port = thingerData.fPort || 1;\n\n    // 2. Convert Hex String to Byte Array\n    const bytes = [];\n    for (let i = 0; i < hexPayload.length; i += 2) {\n        bytes.push(parseInt(hexPayload.substr(i, 2), 16));\n    }\n\n    // 3. Dynamic Function Detection and Execution\n    \n    // CASE A: (The Things Stack v3)\n    if (typeof decodeUplink === 'function') {\n        try {\n            const input = {\n                bytes: bytes,\n                fPort: port\n            };\n            var result = decodeUplink(input);\n            \n            if (result.data) return result.data;\n\n            return result; \n        } catch (e) {\n            console.error(\"Error inside decodeUplink:\", e);\n            throw e;\n        }\n    }\n\n    // CASE B: Legacy TTN (v2)\n    else if (typeof Decoder === 'function') {\n        try {\n            return Decoder(bytes, port);\n        } catch (e) {\n            console.error(\"Error inside Decoder:\", e);\n            throw e;\n        }\n    }\n\n    // CASE C: No decoder found\n    else {\n        throw new Error(\"No compatible TTN decoder function (decodeUplink or Decoder) found in scope.\");\n    }\n}\n\n\n// TTN decoder\nfunction decodeUplink(input) {\n    var res = Decoder(input.bytes, input.fPort);\n    if (res.error) {\n        return {\n            errors: [res.error],\n        };\n    }\n    return {\n        data: res,\n    };\n}\n/**\n * Payload Decoder\n *\n * Copyright 2025 Milesight IoT\n *\n * @product VS373\n */\nvar RAW_VALUE = 0x00;\n\n/* eslint no-redeclare: \"off\" */\n/* eslint-disable */\n\n// The Things Network\nfunction Decoder(bytes, port) {\n    return milesightDeviceDecode(bytes);\n}\n/* eslint-enable */\n\nfunction milesightDeviceDecode(bytes) {\n    var decoded = {};\n\n    for (var i = 0; i < bytes.length; ) {\n        var channel_id = bytes[i++];\n        var channel_type = bytes[i++];\n\n        // IPSO VERSION\n        if (channel_id === 0xff && channel_type === 0x01) {\n            decoded.ipso_version = readProtocolVersion(bytes[i]);\n            i += 1;\n        }\n        // HARDWARE VERSION\n        else if (channel_id === 0xff && channel_type === 0x09) {\n            decoded.hardware_version = readHardwareVersion(bytes.slice(i, i + 2));\n            i += 2;\n        }\n        // FIRMWARE VERSION\n        else if (channel_id === 0xff && channel_type === 0x0a) {\n            decoded.firmware_version = readFirmwareVersion(bytes.slice(i, i + 2));\n            i += 2;\n        }\n        // DEVICE STATUS\n        else if (channel_id === 0xff && channel_type === 0x0b) {\n            decoded.device_status = readDeviceStatus(bytes[i]);\n            i += 1;\n        }\n        // LORAWAN CLASS\n        else if (channel_id === 0xff && channel_type === 0x0f) {\n            decoded.lorawan_class = readLoRaWANClass(bytes[i]);\n            i += 1;\n        }\n        // PRODUCT SERIAL NUMBER\n        else if (channel_id === 0xff && channel_type === 0x16) {\n            decoded.sn = readSerialNumber(bytes.slice(i, i + 8));\n            i += 8;\n        }\n        // TSL VERSION\n        else if (channel_id === 0xff && channel_type === 0xff) {\n            decoded.tsl_version = readTslVersion(bytes.slice(i, i + 2));\n            i += 2;\n        }\n        // DETECTION TARGET (v1.0.1)\n        else if (channel_id === 0x03 && channel_type === 0xf8) {\n            decoded.detection_status = readDetectionStatus(bytes[i]);\n            decoded.target_status = readTargetStatus(bytes[i + 1]);\n            decoded.use_time_now = readUInt16LE(bytes.slice(i + 2, i + 4));\n            decoded.use_time_today = readUInt16LE(bytes.slice(i + 4, i + 6));\n            i += 6;\n        }\n        // DETECTION TARGET (v1.0.2)\n        else if (channel_id === 0x07 && channel_type === 0xb0) {\n            decoded.detection_status = readDetectionStatus(bytes[i]);\n            decoded.target_status = readTargetStatus(bytes[i + 1]);\n            decoded.use_time_now = readUInt24LE(bytes.slice(i + 2, i + 5));\n            decoded.use_time_today = readUInt24LE(bytes.slice(i + 5, i + 8));\n            i += 8;\n        }\n        // REGION OCCUPANCY (v1.0.1)\n        else if (channel_id === 0x04 && channel_type === 0xf9) {\n            // for the old firmware, the occupancy status is 0: occupied, 1: vacant\n            // for the new firmware, the occupancy status is 0: vacant, 1: occupied\n            decoded.region_1_occupancy = readOccupancyStatus(bytes[i] === 1 ? 0 : 1);\n            decoded.region_2_occupancy = readOccupancyStatus(bytes[i + 1] === 1 ? 0 : 1);\n            decoded.region_3_occupancy = readOccupancyStatus(bytes[i + 2] === 1 ? 0 : 1);\n            decoded.region_4_occupancy = readOccupancyStatus(bytes[i + 3] === 1 ? 0 : 1);\n            i += 4;\n        }\n        // REGION TYPE (v1.0.2)\n        else if (channel_id === 0x09 && channel_type === 0xb2) {\n            for (var j = 0; j <= 5; j++) {\n                var region_chn_name = \"region_\" + (j + 1) + \"_type\";\n                decoded[region_chn_name] = readRegionType(bytes[i + j]);\n            }\n            i += 6;\n        }\n        // REGION OCCUPY(v1.0.2)\n        else if (channel_id === 0x0a && channel_type === 0xb3) {\n            var region_count = readUInt8(bytes[i]);\n            var data = readUInt32LE(bytes.slice(i + 1, i + 5));\n            for (var j = 0; j < region_count; j++) {\n                var region_chn_name = \"region_\" + (j + 1) + \"_occupancy\";\n                decoded[region_chn_name] = readOccupancyStatus((data >>> j) & 0x01);\n            }\n            i += 5;\n        }\n        // OUT OF BED (v1.0.1)\n        else if (channel_id === 0x05 && channel_type === 0xfa) {\n            decoded.region_1_out_of_bed_time = readUInt16LE(bytes.slice(i, i + 2));\n            decoded.region_2_out_of_bed_time = readUInt16LE(bytes.slice(i + 2, i + 4));\n            decoded.region_3_out_of_bed_time = readUInt16LE(bytes.slice(i + 4, i + 6));\n            decoded.region_4_out_of_bed_time = readUInt16LE(bytes.slice(i + 6, i + 8));\n            i += 8;\n        }\n        // OUT OF BED (v1.0.2) - REGION 1-3\n        else if (channel_id === 0x0b && channel_type === 0xb4) {\n            decoded.region_1_out_of_bed_time = readUInt24LE(bytes.slice(i, i + 3));\n            decoded.region_2_out_of_bed_time = readUInt24LE(bytes.slice(i + 3, i + 6));\n            decoded.region_3_out_of_bed_time = readUInt24LE(bytes.slice(i + 6, i + 9));\n            i += 9;\n        }\n        // OUT OF BED (v1.0.2) - REGION 4-6\n        else if (channel_id === 0x0c && channel_type === 0xb4) {\n            decoded.region_4_out_of_bed_time = readUInt24LE(bytes.slice(i, i + 3));\n            decoded.region_5_out_of_bed_time = readUInt24LE(bytes.slice(i + 3, i + 6));\n            decoded.region_6_out_of_bed_time = readUInt24LE(bytes.slice(i + 6, i + 9));\n            i += 9;\n        }\n        // ALARM\n        else if (channel_id === 0x06 && channel_type === 0xfb) {\n            var event = {};\n            event.alarm_id = readUInt16LE(bytes.slice(i, i + 2));\n            event.alarm_type = readAlarmType(bytes[i + 2]);\n            event.alarm_status = readAlarmStatus(bytes[i + 3]);\n            // EVENT TYPE: OUT OF BED\n            var alarm_type = readUInt8(bytes[i + 2]);\n            // out_of_bed, bradynea, tachypnea\n            if (alarm_type === 3 || alarm_type === 6 || alarm_type === 7) {\n                event.region_id = readUInt8(bytes[i + 4]);\n            }\n            i += 5;\n            decoded.events = decoded.events || [];\n            decoded.events.push(event);\n        }\n        // BREATHING DETECTION\n        else if (channel_id === 0x08 && channel_type === 0xb1) {\n            decoded.respiratory_status = readBreathStatus(bytes[i]);\n            decoded.respiratory_rate = readUInt16LE(bytes.slice(i + 1, i + 3)) / 100;\n            i += 3;\n        }\n        // HISTORY DATA\n        else if (channel_id === 0x20 && channel_type === 0xce) {\n            var data = {};\n            data.timestamp = readUInt32LE(bytes.slice(i, i + 4));\n            data.alarm_id = readUInt16LE(bytes.slice(i + 4, i + 6));\n            data.alarm_type = readAlarmType(bytes[i + 6]);\n            data.alarm_status = readAlarmStatus(bytes[i + 7]);\n            var alarm_type = readUInt8(bytes[i + 6]);\n            // EVENT TYPE: OUT OF BED\n            if (alarm_type === 3 || alarm_type === 6 || alarm_type === 7) {\n                data.region_id = readUInt8(bytes[i + 8]);\n            }\n            i += 9;\n            decoded.history = decoded.history || [];\n            decoded.history.push(data);\n        }\n        // DOWNLINK RESPONSE\n        else if (channel_id === 0xfe || channel_id === 0xff) {\n            var result = handle_downlink_response(channel_type, bytes, i);\n            decoded = Object.assign(decoded, result.data);\n            i = result.offset;\n        } else if (channel_id === 0xf8 || channel_id === 0xf9) {\n            var result = handle_downlink_response_ext(channel_id, channel_type, bytes, i);\n            decoded = Object.assign(decoded, result.data);\n            i = result.offset;\n        } else {\n            break;\n        }\n    }\n\n    return decoded;\n}\n\nfunction handle_downlink_response(channel_type, bytes, offset) {\n    var decoded = {};\n\n    switch (channel_type) {\n        case 0x04:\n            decoded.confirm_mode_enable = readEnableStatus(bytes[offset]);\n            offset += 1;\n            break;\n        case 0x10:\n            decoded.reboot = readYesNoStatus(1);\n            offset += 1;\n            break;\n        case 0x11:\n            decoded.timestamp = readUInt32LE(bytes.slice(offset, offset + 4));\n            offset += 4;\n            break;\n        case 0x28:\n            decoded.report_status = readYesNoStatus(1);\n            offset += 1;\n            break;\n        case 0x2f:\n            decoded.led_indicator_enable = readEnableStatus(bytes[offset]);\n            offset += 1;\n            break;\n        case 0x35:\n            decoded.d2d_key = bytesToHexString(bytes.slice(offset, offset + 8));\n            offset += 8;\n            break;\n        case 0x3e:\n            decoded.buzzer_enable = readEnableStatus(bytes[offset]);\n            offset += 1;\n            break;\n        case 0x40:\n            decoded.adr_enable = readEnableStatus(bytes[offset]);\n            offset += 1;\n            break;\n        case 0x42:\n            decoded.wifi_enable = readEnableStatus(bytes[offset]);\n            offset += 1;\n            break;\n        case 0x64:\n            decoded.release_alarm = readYesNoStatus(1);\n            offset += 1;\n            break;\n        case 0x69:\n            decoded.retransmit_enable = readEnableStatus(bytes[offset]);\n            offset += 1;\n            break;\n        case 0x6a:\n            var interval_type = readUInt8(bytes[offset]);\n            switch (interval_type) {\n                case 0:\n                    decoded.retransmit_interval = readUInt16LE(bytes.slice(offset + 1, offset + 3));\n                    break;\n                case 1:\n                    decoded.resend_interval = readUInt16LE(bytes.slice(offset + 1, offset + 3));\n                    break;\n            }\n            offset += 3;\n            break;\n        case 0x84:\n            decoded.d2d_enable = readEnableStatus(bytes[offset]);\n            offset += 1;\n            break;\n        case 0x8e:\n            // ignore the first byte\n            decoded.report_interval = readUInt16LE(bytes.slice(offset + 1, offset + 3));\n            offset += 3;\n            break;\n        case 0x96:\n            var config = readD2DMasterConfig(bytes.slice(offset, offset + 8));\n            offset += 8;\n\n            decoded.d2d_master_config = decoded.d2d_master_config || [];\n            decoded.d2d_master_config.push(config);\n            break;\n        default:\n            throw new Error(\"unknown downlink response\");\n    }\n\n    return { data: decoded, offset: offset };\n}\n\nfunction handle_downlink_response_ext(code, channel_type, bytes, offset) {\n    var decoded = {};\n\n    switch (channel_type) {\n        case 0x48:\n            var region_id = readUInt8(bytes[offset]) + 1;\n            var region_name = \"region_\" + region_id;\n            decoded.delete_region = {};\n            decoded.delete_region[region_name] = readYesNoStatus(1);\n            offset += 1;\n            break;\n        case 0x49:\n            var region_settings = readRegionSettings(bytes.slice(offset, offset + 9));\n            offset += 9;\n            decoded.region_settings = decoded.region_settings || [];\n            decoded.region_settings.push(region_settings);\n            break;\n        case 0x4a:\n            var region_detection_settings = readRegionDetectionSettings(bytes.slice(offset, offset + 5));\n            offset += 5;\n            decoded.region_detection_settings = decoded.region_detection_settings || [];\n            decoded.region_detection_settings.push(region_detection_settings);\n            break;\n        case 0x4b:\n            var bed_detection_settings = readBedDetectionSettings(bytes.slice(offset, offset + 9));\n            offset += 9;\n            decoded.bed_detection_settings = decoded.bed_detection_settings || [];\n            decoded.bed_detection_settings.push(bed_detection_settings);\n            break;\n        case 0x4c:\n            var d2d_slave_config = readD2DSlaveConfig(bytes.slice(offset, offset + 5));\n            offset += 5;\n            decoded.d2d_slave_config = decoded.d2d_slave_config || [];\n            decoded.d2d_slave_config.push(d2d_slave_config);\n            break;\n        case 0x4e:\n            decoded.digital_output = readDigitalOutput(bytes[offset]);\n            offset += 1;\n            break;\n        case 0x4d:\n            decoded.wifi_ssid_hidden = readEnableStatus(bytes[offset]);\n            offset += 1;\n            break;\n        case 0x4f:\n            decoded.detection_region_settings = readDetectionRegion(bytes.slice(offset, offset + 12));\n            offset += 12;\n            break;\n        case 0x50:\n            decoded.detection_settings = readDetectionSettings(bytes.slice(offset, offset + 2));\n            offset += 2;\n            break;\n        case 0x51:\n            decoded.fall_detection_settings = readFallDetectionSettings(bytes.slice(offset, offset + 6));\n            offset += 6;\n            break;\n        case 0x52:\n            decoded.dwell_detection_settings = readDwellDetectionSettings(bytes.slice(offset, offset + 3));\n            offset += 3;\n            break;\n        case 0x53:\n            decoded.motion_detection_settings = readMotionDetectionSettings(bytes.slice(offset, offset + 3));\n            offset += 3;\n            break;\n        case 0x56:\n            decoded.existence_detection_settings = readExistenceDetectionSettings(bytes.slice(offset, offset + 2));\n            offset += 2;\n            break;\n        case 0x85:\n            decoded.rejoin_config = {};\n            decoded.rejoin_config.enable = readEnableStatus(bytes[offset]);\n            decoded.rejoin_config.max_count = readUInt8(bytes[offset + 1]);\n            offset += 2;\n            break;\n        case 0x86:\n            decoded.data_rate = readUInt8(bytes[offset]);\n            offset += 1;\n            break;\n        case 0x87:\n            decoded.tx_power_level = readUInt8(bytes[offset]);\n            offset += 1;\n            break;\n        case 0x91:\n            decoded.time_sync_config = {};\n            decoded.time_sync_config.mode = readTimeSyncMode(bytes[offset]);\n            decoded.time_sync_config.timestamp = readUInt32LE(bytes.slice(offset + 1, offset + 5));\n            offset += 5;\n            break;\n        case 0xb1:\n            decoded.sleep_detection_config = {};\n            decoded.sleep_detection_config.enable = readEnableStatus(bytes[offset]);\n            decoded.sleep_detection_config.start_time = readUInt16LE(bytes.slice(offset + 1, offset + 3));\n            decoded.sleep_detection_config.end_time = readUInt16LE(bytes.slice(offset + 3, offset + 5));\n            decoded.sleep_detection_config.out_of_bed_enable = readEnableStatus(bytes[offset + 5]);\n            decoded.sleep_detection_config.out_of_bed_time = readUInt8(bytes[offset + 6]);\n            offset += 7;\n            break;\n        case 0xb2:\n            decoded.respiratory_detection_config = {};\n            decoded.respiratory_detection_config.enable = readEnableStatus(bytes[offset]);\n            decoded.respiratory_detection_config.min = readUInt8(bytes[offset + 1]);\n            decoded.respiratory_detection_config.max = readUInt8(bytes[offset + 2]);\n            offset += 3;\n            break;\n        case 0xb3:\n            decoded.ai_fall_detection_enable = readEnableStatus(bytes[offset]);\n            offset += 1;\n            break;\n        case 0xb4:\n            decoded.confirm_fall_alarm = {};\n            decoded.confirm_fall_alarm.alarm_id = readUInt16LE(bytes.slice(offset, offset + 2));\n            decoded.confirm_fall_alarm.action = readConfirmAlarmType(bytes[offset + 2]);\n            offset += 3;\n            break;\n        case 0xb5:\n            decoded.trigger_digital_output_config = {};\n            decoded.trigger_digital_output_config.enable = readEnableStatus(bytes[offset]);\n            decoded.trigger_digital_output_config.fall = readEnableStatus(bytes[offset + 1]);\n            decoded.trigger_digital_output_config.lying = readEnableStatus(bytes[offset + 2]);\n            decoded.trigger_digital_output_config.out_of_bed = readEnableStatus(bytes[offset + 3]);\n            decoded.trigger_digital_output_config.dwell = readEnableStatus(bytes[offset + 4]);\n            decoded.trigger_digital_output_config.motionless = readEnableStatus(bytes[offset + 5]);\n            offset += 6;\n            break;\n        default:\n            throw new Error(\"unknown downlink response\");\n    }\n\n    if (hasResultFlag(code)) {\n        var result_value = readUInt8(bytes[offset]);\n        offset += 1;\n\n        if (result_value !== 0) {\n            var request = decoded;\n            decoded = {};\n            decoded.device_response_result = {};\n            decoded.device_response_result.channel_type = channel_type;\n            decoded.device_response_result.result = readResultStatus(result_value);\n            decoded.device_response_result.request = request;\n        }\n    }\n\n    return { data: decoded, offset: offset };\n}\n\nfunction hasResultFlag(code) {\n    return code === 0xf8;\n}\n\nfunction readResultStatus(status) {\n    var status_map = { 0: \"success\", 1: \"forbidden\", 2: \"invalid parameter\" };\n    return getValue(status_map, status);\n}\n\nfunction readProtocolVersion(bytes) {\n    var major = (bytes & 0xf0) >> 4;\n    var minor = bytes & 0x0f;\n    return \"v\" + major + \".\" + minor;\n}\n\nfunction readHardwareVersion(bytes) {\n    var major = (bytes[0] & 0xff).toString(16);\n    var minor = (bytes[1] & 0xff) >> 4;\n    return \"v\" + major + \".\" + minor;\n}\n\nfunction readFirmwareVersion(bytes) {\n    var major = (bytes[0] & 0xff).toString(16);\n    var minor = (bytes[1] & 0xff).toString(16);\n    return \"v\" + major + \".\" + minor;\n}\n\nfunction readTslVersion(bytes) {\n    var major = bytes[0] & 0xff;\n    var minor = bytes[1] & 0xff;\n    return \"v\" + major + \".\" + minor;\n}\n\nfunction readSerialNumber(bytes) {\n    var temp = [];\n    for (var idx = 0; idx < bytes.length; idx++) {\n        temp.push((\"0\" + (bytes[idx] & 0xff).toString(16)).slice(-2));\n    }\n    return temp.join(\"\");\n}\n\nfunction readLoRaWANClass(type) {\n    var lorawan_class_map = {\n        0: \"Class A\",\n        1: \"Class B\",\n        2: \"Class C\",\n        3: \"Class CtoB\",\n    };\n    return getValue(lorawan_class_map, type);\n}\n\nfunction readDeviceStatus(status) {\n    var device_status_map = { 0: \"off\", 1: \"on\" };\n    return getValue(device_status_map, status);\n}\n\nfunction readDetectionStatus(status) {\n    var detection_status_map = {\n        0: \"normal\",\n        1: \"vacant\",\n        2: \"in_bed\",\n        3: \"out_of_bed\",\n        4: \"fall\",\n    };\n    return getValue(detection_status_map, status);\n}\n\nfunction readBreathStatus(status) {\n    var breath_status_map = {\n        1: \"no_data_input\",\n        2: \"normal\",\n        3: \"tachypnea\",\n        4: \"bradypnea\",\n        5: \"undetectable\",\n    };\n    return getValue(breath_status_map, status);\n}\n\nfunction readTargetStatus(status) {\n    var target_status_map = {\n        0: \"normal\",\n        1: \"motionless\",\n        2: \"abnormal\",\n        3: \"lying_down\",\n    };\n    return getValue(target_status_map, status);\n}\n\nfunction readOccupancyStatus(status) {\n    var occupancy_status_map = {\n        0: \"vacant\",\n        1: \"occupied\",\n    };\n    return getValue(occupancy_status_map, status);\n}\n\nfunction readAlarmType(type) {\n    var alarm_type_map = {\n        0: \"fall\",\n        1: \"motionless\",\n        2: \"dwell\",\n        3: \"out_of_bed\",\n        4: \"occupied\",\n        5: \"vacant\",\n        6: \"bradynea\",\n        7: \"tachypnea\",\n        8: \"lying_down\",\n    };\n    return getValue(alarm_type_map, type);\n}\n\nfunction readAlarmStatus(status) {\n    var alarm_status_map = {\n        1: \"alarm_triggered\",\n        2: \"alarm_deactivated\",\n        3: \"alarm_ignored\",\n        4: \"respiratory_status\",\n    };\n    return getValue(alarm_status_map, status);\n}\n\nfunction readEnableStatus(status) {\n    var status_map = { 0: \"disable\", 1: \"enable\" };\n    return getValue(status_map, status);\n}\n\nfunction readYesNoStatus(status) {\n    var yes_no_status_map = { 0: \"no\", 1: \"yes\" };\n    return getValue(yes_no_status_map, status);\n}\n\nfunction readDigitalOutput(status) {\n    var digital_output_map = { 0: \"low\", 1: \"high\" };\n    return getValue(digital_output_map, status);\n}\n\nfunction readDetectionRegion(bytes) {\n    var detection_region = {};\n    detection_region.x_min = readInt16LE(bytes.slice(0, 2));\n    detection_region.x_max = readInt16LE(bytes.slice(2, 4));\n    detection_region.y_min = readInt16LE(bytes.slice(4, 6));\n    detection_region.y_max = readInt16LE(bytes.slice(6, 8));\n    detection_region.z_max = readUInt16LE(bytes.slice(8, 10));\n    detection_region.install_height = readUInt16LE(bytes.slice(10, 12));\n    return detection_region;\n}\n\nfunction readDetectionSettings(bytes) {\n    var detection_settings = {};\n    detection_settings.mode = readDetectionMode(bytes[0]);\n    detection_settings.sensitivity = readDetectionSensitivity(bytes[1]);\n    return detection_settings;\n}\n\nfunction readDetectionMode(type) {\n    var detection_mode_map = { 0: \"default\", 1: \"bedroom\", 2: \"bathroom\", 3: \"public\" };\n    return getValue(detection_mode_map, type);\n}\n\nfunction readDetectionSensitivity(type) {\n    var detection_sensitivity_map = { 0: \"low\", 1: \"high\", 2: \"medium\", 3: \"custom\" };\n    return getValue(detection_sensitivity_map, type);\n}\n\nfunction readFallDetectionSettings(bytes) {\n    var fall_detection_settings = {};\n    fall_detection_settings.confirm_time = readUInt16LE(bytes.slice(0, 2));\n    fall_detection_settings.delay_report_time = readUInt16LE(bytes.slice(2, 4));\n    fall_detection_settings.alarm_duration = readUInt16LE(bytes.slice(4, 6));\n    return fall_detection_settings;\n}\n\nfunction readDwellDetectionSettings(bytes) {\n    var dwell_detection_settings = {};\n    dwell_detection_settings.enable = readEnableStatus(bytes[0]);\n    dwell_detection_settings.dwell_time = readUInt16LE(bytes.slice(1, 3));\n    return dwell_detection_settings;\n}\n\nfunction readMotionDetectionSettings(bytes) {\n    var motion_detection_settings = {};\n    motion_detection_settings.enable = readEnableStatus(bytes[0]);\n    motion_detection_settings.motionless_time = readUInt8(bytes[2]);\n    return motion_detection_settings;\n}\n\nfunction readExistenceDetectionSettings(bytes) {\n    var existence_detection_settings = {};\n    existence_detection_settings.exist_confirm_time = readUInt8(bytes[0]);\n    existence_detection_settings.leaved_confirm_time = readUInt8(bytes[1]);\n    return existence_detection_settings;\n}\n\nfunction readRegionSettings(bytes) {\n    var region_settings = {};\n    region_settings.region_id = readUInt8(bytes[0]) + 1;\n    region_settings.x_min = readInt16LE(bytes.slice(1, 3));\n    region_settings.x_max = readInt16LE(bytes.slice(3, 5));\n    region_settings.y_min = readInt16LE(bytes.slice(5, 7));\n    region_settings.y_max = readInt16LE(bytes.slice(7, 9));\n    return region_settings;\n}\n\nfunction readRegionDetectionSettings(bytes) {\n    var region_detection_settings = {};\n    region_detection_settings.region_id = readUInt8(bytes[0]) + 1;\n    region_detection_settings.fall_detection_enable = readEnableStatus(bytes[1]);\n    region_detection_settings.dwell_detection_enable = readEnableStatus(bytes[2]);\n    region_detection_settings.motion_detection_enable = readEnableStatus(bytes[3]);\n    region_detection_settings.region_type = readRegionType(bytes[4]);\n    return region_detection_settings;\n}\n\nfunction readRegionType(type) {\n    var region_type_map = { 0: \"custom\", 1: \"bed\", 2: \"door\", 3: \"ignore\", 255: \"unset\" };\n    return getValue(region_type_map, type);\n}\n\nfunction readBedDetectionSettings(bytes) {\n    var bed_detection_settings = {};\n    bed_detection_settings.bed_id = readUInt8(bytes[0]) + 1;\n    bed_detection_settings.enable = readEnableStatus(bytes[1]);\n    bed_detection_settings.start_time = readUInt16LE(bytes.slice(2, 4));\n    bed_detection_settings.end_time = readUInt16LE(bytes.slice(4, 6));\n    bed_detection_settings.bed_height = readUInt16LE(bytes.slice(6, 8));\n    bed_detection_settings.out_of_bed_time = readUInt16LE(bytes.slice(8, 10));\n    return bed_detection_settings;\n}\n\nfunction readD2DMasterConfig(bytes) {\n    var offset = 0;\n    var config = {};\n    config.mode = readD2DMode(readUInt8(bytes[offset]));\n    config.enable = readEnableStatus(bytes[offset + 1]);\n    config.lora_uplink_enable = readEnableStatus(bytes[offset + 2]);\n    config.d2d_cmd = readD2DCommand(bytes.slice(offset + 3, offset + 5));\n    config.time = readUInt16LE(bytes.slice(offset + 5, offset + 7));\n    config.time_enable = readEnableStatus(bytes[offset + 7]);\n    return config;\n}\n\nfunction readD2DCommand(bytes) {\n    return (\"0\" + (bytes[1] & 0xff).toString(16)).slice(-2) + (\"0\" + (bytes[0] & 0xff).toString(16)).slice(-2);\n}\n\nfunction readD2DMode(type) {\n    var d2d_mode_map = { 0: \"occupied\", 1: \"vacant\", 2: \"fall\", 3: \"out_of_bed\", 4: \"motionless\", 5: \"dwell\" };\n    return getValue(d2d_mode_map, type);\n}\n\nfunction readD2DSlaveConfig(bytes) {\n    var d2d_slave_config = {};\n    d2d_slave_config.mode = readD2DMode(readUInt8(bytes[0]));\n    d2d_slave_config.d2d_cmd = readD2DCommand(bytes.slice(1, 3));\n    d2d_slave_config.control_type = readD2DControlType(bytes[3]);\n    d2d_slave_config.action_type = readD2DActionType(bytes[4]);\n    return d2d_slave_config;\n}\n\nfunction readD2DControlType(type) {\n    var d2d_control_type_map = { 1: \"button\" };\n    return getValue(d2d_control_type_map, type);\n}\n\nfunction readD2DActionType(type) {\n    var d2d_action_type_map = { 1: \"alarm_deactivate\", 2: \"wifi_on\", 3: \"wifi_off\" };\n    return getValue(d2d_action_type_map, type);\n}\n\nfunction readConfirmAlarmType(type) {\n    var confirm_alarm_type_map = { 2: \"dismiss\", 3: \"ignore\" };\n    return getValue(confirm_alarm_type_map, type);\n}\n\nfunction readTimeSyncMode(type) {\n    var time_sync_mode_map = { 0: \"sync_from_gateway\", 1: \"manual_sync\" };\n    return getValue(time_sync_mode_map, type);\n}\n\n/* eslint-disable */\nfunction readUInt8(bytes) {\n    return bytes & 0xff;\n}\n\nfunction readInt8(bytes) {\n    var ref = readUInt8(bytes);\n    return ref > 0x7f ? ref - 0x100 : ref;\n}\n\nfunction readUInt16LE(bytes) {\n    var value = (bytes[1] << 8) + bytes[0];\n    return value & 0xffff;\n}\n\nfunction readInt16LE(bytes) {\n    var ref = readUInt16LE(bytes);\n    return ref > 0x7fff ? ref - 0x10000 : ref;\n}\n\nfunction readUInt24LE(bytes) {\n    var value = (bytes[2] << 16) + (bytes[1] << 8) + bytes[0];\n    return value & 0xffffff;\n}\n\nfunction readInt24LE(bytes) {\n    var ref = readUInt24LE(bytes);\n    return ref > 0x7fffff ? ref - 0x1000000 : ref;\n}\n\nfunction readUInt32LE(bytes) {\n    var value = (bytes[3] << 24) + (bytes[2] << 16) + (bytes[1] << 8) + bytes[0];\n    return (value & 0xffffffff) >>> 0;\n}\n\nfunction readInt32LE(bytes) {\n    var ref = readUInt32LE(bytes);\n    return ref > 0x7fffffff ? ref - 0x100000000 : ref;\n}\n\nfunction readFloatLE(bytes) {\n    var bits = (bytes[3] << 24) | (bytes[2] << 16) | (bytes[1] << 8) | bytes[0];\n    var sign = bits >>> 31 === 0 ? 1.0 : -1.0;\n    var e = (bits >>> 23) & 0xff;\n    var m = e === 0 ? (bits & 0x7fffff) << 1 : (bits & 0x7fffff) | 0x800000;\n    var f = sign * m * Math.pow(2, e - 150);\n    return f;\n}\n\nfunction bytesToHexString(bytes) {\n    var temp = [];\n    for (var i = 0; i < bytes.length; i++) {\n        temp.push((\"0\" + (bytes[i] & 0xff).toString(16)).slice(-2));\n    }\n    return temp.join(\"\");\n}\n\nfunction getValue(map, key) {\n    if (RAW_VALUE) return key;\n\n    var value = map[key];\n    if (!value) value = \"unknown\";\n    return value;\n}\n\nif (!Object.assign) {\n    Object.defineProperty(Object, \"assign\", {\n        enumerable: false,\n        configurable: true,\n        writable: true,\n        value: function (target) {\n            \"use strict\";\n            if (target == null) {\n                throw new TypeError(\"Cannot convert first argument to object\");\n            }\n\n            var to = Object(target);\n            for (var i = 1; i < arguments.length; i++) {\n                var nextSource = arguments[i];\n                if (nextSource == null) {\n                    continue;\n                }\n                nextSource = Object(nextSource);\n\n                var keysArray = Object.keys(Object(nextSource));\n                for (var nextIndex = 0, len = keysArray.length; nextIndex < len; nextIndex++) {\n                    var nextKey = keysArray[nextIndex];\n                    var desc = Object.getOwnPropertyDescriptor(nextSource, nextKey);\n                    if (desc !== undefined && desc.enumerable) {\n                        // concat array\n                        if (Array.isArray(to[nextKey]) && Array.isArray(nextSource[nextKey])) {\n                            to[nextKey] = to[nextKey].concat(nextSource[nextKey]);\n                        } else {\n                            to[nextKey] = nextSource[nextKey];\n                        }\n                    }\n                }\n            }\n            return to;\n        },\n    });\n}",
+            "environment": "javascript",
+            "storage": "",
+            "version": "1.0"
+          },
+          "flows": {
+            "milesight_vs373_decoder": {
+              "data": {
+                "payload": "{{payload}}",
+                "payload_function": "decodeThingerUplink",
+                "payload_type": "source_payload",
+                "resource": "uplink",
+                "source": "resource",
+                "update": "events"
+              },
+              "enabled": true,
+              "sink": {
+                "payload": "{{payload}}",
+                "payload_function": "",
+                "payload_type": "source_payload",
+                "resource_stream": "uplink_decoded",
+                "target": "resource_stream"
+              },
+              "split_data": false
+            }
+          },
+          "properties": {
+            "uplink": {
+              "data": {
+                "payload": "{{payload}}",
+                "payload_function": "",
+                "payload_type": "source_payload",
+                "resource": "uplink",
+                "source": "resource",
+                "update": "events"
+              },
+              "default": {
+                "source": "value"
+              },
+              "enabled": true
+            }
+          }
+        },
+        "_resources": {
+          "properties": [
+            {
+              "property": "dashboard",
+              "value": {
+                "tabs": [
+                  {
+                    "name": "Fall Detection",
+                    "widgets": [
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 0,
+                          "sizeX": 2,
+                          "sizeY": 5
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Detection Status"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "enableExtraTextColor": false,
+                          "enableIconColor": false,
+                          "enableIconSize": false,
+                          "extraText": "",
+                          "extraTextColor": "#1E313E",
+                          "extraTextColorConditions": [],
+                          "extraTextConditions": [],
+                          "extraTextPosition": "above-value",
+                          "extraTextSize": "20px",
+                          "extraTextWeight": "font-light",
+                          "icon": "",
+                          "iconColor": "#1E313E",
+                          "iconColorConditions": [],
+                          "iconConditions": [],
+                          "iconGap": "8px",
+                          "iconPosition": "before-value",
+                          "iconSize": "75px",
+                          "iconVerticalOffset": "0px",
+                          "link": "",
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textColorConditions": [],
+                          "textSize": "50px",
+                          "textWeight": "font-light",
+                          "unit": "",
+                          "unitSize": "20px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_vs373_data",
+                              "mapping": "detection_status",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#1abc9c",
+                            "name": "Detection Status",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 2,
+                          "row": 0,
+                          "sizeX": 2,
+                          "sizeY": 5
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Target Status"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "enableExtraTextColor": false,
+                          "enableIconColor": false,
+                          "enableIconSize": false,
+                          "extraText": "",
+                          "extraTextColor": "#1E313E",
+                          "extraTextColorConditions": [],
+                          "extraTextConditions": [],
+                          "extraTextPosition": "above-value",
+                          "extraTextSize": "20px",
+                          "extraTextWeight": "font-light",
+                          "icon": "",
+                          "iconColor": "#1E313E",
+                          "iconColorConditions": [],
+                          "iconConditions": [],
+                          "iconGap": "8px",
+                          "iconPosition": "before-value",
+                          "iconSize": "75px",
+                          "iconVerticalOffset": "0px",
+                          "link": "",
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textColorConditions": [],
+                          "textSize": "50px",
+                          "textWeight": "font-light",
+                          "unit": "",
+                          "unitSize": "20px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_vs373_data",
+                              "mapping": "target_status",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#e74c3c",
+                            "name": "Target Status",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 4,
+                          "row": 0,
+                          "sizeX": 2,
+                          "sizeY": 5
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Respiratory Rate"
+                        },
+                        "properties": {
+                          "decimalPlaces": 1,
+                          "enableExtraTextColor": false,
+                          "enableIconColor": false,
+                          "enableIconSize": false,
+                          "extraText": "",
+                          "extraTextColor": "#1E313E",
+                          "extraTextColorConditions": [],
+                          "extraTextConditions": [],
+                          "extraTextPosition": "above-value",
+                          "extraTextSize": "20px",
+                          "extraTextWeight": "font-light",
+                          "icon": "",
+                          "iconColor": "#1E313E",
+                          "iconColorConditions": [],
+                          "iconConditions": [],
+                          "iconGap": "8px",
+                          "iconPosition": "before-value",
+                          "iconSize": "75px",
+                          "iconVerticalOffset": "0px",
+                          "link": "",
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textColorConditions": [],
+                          "textSize": "65px",
+                          "textWeight": "font-light",
+                          "unit": "bpm",
+                          "unitSize": "20px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_vs373_data",
+                              "mapping": "respiratory_rate",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#3498db",
+                            "name": "Respiratory Rate",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 5,
+                          "sizeX": 6,
+                          "sizeY": 8
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Detection Status (24h)"
+                        },
+                        "properties": {
+                          "alignTimeSeries": false,
+                          "dataAppend": false,
+                          "options": "var options = {\n    chart: {\n        type: 'line',\n        stacked: false\n    },\n    dataLabels: {\n        enabled: false\n    },\n    stroke: {\n        curve: 'smooth',\n        width: 2\n    },\n    xaxis: {\n        type: 'datetime',\n        labels: {\n            datetimeUTC: false\n        },\n        tooltip: {\n            enabled: false\n        }\n    },\n    yaxis: {\n        labels: {\n            formatter: function (val) {\n                if (val !== null && typeof val !== 'undefined')\n                    return val.toFixed(1);\n            }\n        }\n    },\n    tooltip: {\n        x: {\n            format: 'dd/MM/yyyy HH:mm:ss'\n        }\n    },\n    legend: {\n        position: 'top'\n    }\n};\n",
+                          "realTimeUpdate": true
+                        },
+                        "sources": [
+                          {
+                            "aggregation": {},
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_vs373_data",
+                              "mapping": "respiratory_rate",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#3498db",
+                            "name": "Respiratory Rate",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          },
+                          {
+                            "aggregation": {},
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_vs373_data",
+                              "mapping": "use_time_now",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#f39c12",
+                            "name": "Use Time Now",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          }
+                        ],
+                        "type": "apex_charts"
+                      },
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 13,
+                          "sizeX": 2,
+                          "sizeY": 4
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Use Time Now"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "enableExtraTextColor": false,
+                          "enableIconColor": false,
+                          "enableIconSize": false,
+                          "extraText": "",
+                          "extraTextColor": "#1E313E",
+                          "extraTextColorConditions": [],
+                          "extraTextConditions": [],
+                          "extraTextPosition": "above-value",
+                          "extraTextSize": "20px",
+                          "extraTextWeight": "font-light",
+                          "icon": "",
+                          "iconColor": "#1E313E",
+                          "iconColorConditions": [],
+                          "iconConditions": [],
+                          "iconGap": "8px",
+                          "iconPosition": "before-value",
+                          "iconSize": "75px",
+                          "iconVerticalOffset": "0px",
+                          "link": "",
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textColorConditions": [],
+                          "textSize": "50px",
+                          "textWeight": "font-light",
+                          "unit": "min",
+                          "unitSize": "20px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_vs373_data",
+                              "mapping": "use_time_now",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#f39c12",
+                            "name": "Use Time Now",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 2,
+                          "row": 13,
+                          "sizeX": 2,
+                          "sizeY": 4
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Use Time Today"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "enableExtraTextColor": false,
+                          "enableIconColor": false,
+                          "enableIconSize": false,
+                          "extraText": "",
+                          "extraTextColor": "#1E313E",
+                          "extraTextColorConditions": [],
+                          "extraTextConditions": [],
+                          "extraTextPosition": "above-value",
+                          "extraTextSize": "20px",
+                          "extraTextWeight": "font-light",
+                          "icon": "",
+                          "iconColor": "#1E313E",
+                          "iconColorConditions": [],
+                          "iconConditions": [],
+                          "iconGap": "8px",
+                          "iconPosition": "before-value",
+                          "iconSize": "75px",
+                          "iconVerticalOffset": "0px",
+                          "link": "",
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textColorConditions": [],
+                          "textSize": "50px",
+                          "textWeight": "font-light",
+                          "unit": "min",
+                          "unitSize": "20px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_vs373_data",
+                              "mapping": "use_time_today",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#9b59b6",
+                            "name": "Use Time Today",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 4,
+                          "row": 13,
+                          "sizeX": 2,
+                          "sizeY": 4
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Respiratory Status"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "enableExtraTextColor": false,
+                          "enableIconColor": false,
+                          "enableIconSize": false,
+                          "extraText": "",
+                          "extraTextColor": "#1E313E",
+                          "extraTextColorConditions": [],
+                          "extraTextConditions": [],
+                          "extraTextPosition": "above-value",
+                          "extraTextSize": "20px",
+                          "extraTextWeight": "font-light",
+                          "icon": "",
+                          "iconColor": "#1E313E",
+                          "iconColorConditions": [],
+                          "iconConditions": [],
+                          "iconGap": "8px",
+                          "iconPosition": "before-value",
+                          "iconSize": "75px",
+                          "iconVerticalOffset": "0px",
+                          "link": "",
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textColorConditions": [],
+                          "textSize": "40px",
+                          "textWeight": "font-light",
+                          "unit": "",
+                          "unitSize": "20px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_vs373_data",
+                              "mapping": "respiratory_status",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#16a085",
+                            "name": "Respiratory Status",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 17,
+                          "sizeX": 6,
+                          "sizeY": 8
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Recent Events (Last 7 Days)"
+                        },
+                        "properties": {
+                          "source": "code",
+                          "template": "<div style=\"width:100%; height:100%; overflow-y:auto\">\n  <table class=\"table table-striped table-condensed\">\n    <thead>\n      <tr>\n        <th>Time</th>\n        <th>Alarm Type</th>\n        <th>Alarm Status</th>\n        <th>Alarm ID</th>\n      </tr>\n    </thead>\n    <tbody>\n      <tr ng-repeat=\"entry in value | filter:hasEvents\">\n        <td>{{ entry.ts | date:'medium' }}</td>\n        <td>\n          <span ng-repeat=\"evt in entry.events\">\n            {{ evt.alarm_type || '—' }}\n            <span ng-if=\"!$last\">, </span>\n          </span>\n        </td>\n        <td>\n          <span ng-repeat=\"evt in entry.events\">\n            {{ evt.alarm_status || '—' }}\n            <span ng-if=\"!$last\">, </span>\n          </span>\n        </td>\n        <td>\n          <span ng-repeat=\"evt in entry.events\">\n            {{ evt.alarm_id || '—' }}\n            <span ng-if=\"!$last\">, </span>\n          </span>\n        </td>\n      </tr>\n      <tr ng-if=\"(value | filter:hasEvents).length === 0\">\n        <td colspan=\"4\" style=\"text-align:center; padding:20px; color:#999;\">\n          No events recorded in the last 7 days\n        </td>\n      </tr>\n    </tbody>\n  </table>\n</div>"
+                        },
+                        "sources": [
+                          {
+                            "aggregation": {},
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_vs373_data",
+                              "mapping": "ts",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#1abc9c",
+                            "name": "ts",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "day",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 7
+                            }
+                          },
+                          {
+                            "aggregation": {},
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_vs373_data",
+                              "mapping": "events",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#e74c3c",
+                            "name": "events",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "day",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 7
+                            }
+                          }
+                        ],
+                        "type": "html_time"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "Region Monitoring",
+                    "widgets": [
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 0,
+                          "sizeX": 2,
+                          "sizeY": 4
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Region 1 Occupancy"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "enableExtraTextColor": false,
+                          "enableIconColor": false,
+                          "enableIconSize": false,
+                          "extraText": "",
+                          "extraTextColor": "#1E313E",
+                          "extraTextColorConditions": [],
+                          "extraTextConditions": [],
+                          "extraTextPosition": "above-value",
+                          "extraTextSize": "20px",
+                          "extraTextWeight": "font-light",
+                          "icon": "",
+                          "iconColor": "#1E313E",
+                          "iconColorConditions": [],
+                          "iconConditions": [],
+                          "iconGap": "8px",
+                          "iconPosition": "before-value",
+                          "iconSize": "75px",
+                          "iconVerticalOffset": "0px",
+                          "link": "",
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textColorConditions": [],
+                          "textSize": "50px",
+                          "textWeight": "font-light",
+                          "unit": "",
+                          "unitSize": "20px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_vs373_data",
+                              "mapping": "region_1_occupancy",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#2ecc71",
+                            "name": "Region 1",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 2,
+                          "row": 0,
+                          "sizeX": 2,
+                          "sizeY": 4
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Region 2 Occupancy"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "enableExtraTextColor": false,
+                          "enableIconColor": false,
+                          "enableIconSize": false,
+                          "extraText": "",
+                          "extraTextColor": "#1E313E",
+                          "extraTextColorConditions": [],
+                          "extraTextConditions": [],
+                          "extraTextPosition": "above-value",
+                          "extraTextSize": "20px",
+                          "extraTextWeight": "font-light",
+                          "icon": "",
+                          "iconColor": "#1E313E",
+                          "iconColorConditions": [],
+                          "iconConditions": [],
+                          "iconGap": "8px",
+                          "iconPosition": "before-value",
+                          "iconSize": "75px",
+                          "iconVerticalOffset": "0px",
+                          "link": "",
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textColorConditions": [],
+                          "textSize": "50px",
+                          "textWeight": "font-light",
+                          "unit": "",
+                          "unitSize": "20px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_vs373_data",
+                              "mapping": "region_2_occupancy",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#3498db",
+                            "name": "Region 2",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 4,
+                          "row": 0,
+                          "sizeX": 2,
+                          "sizeY": 4
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Region 3 Occupancy"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "enableExtraTextColor": false,
+                          "enableIconColor": false,
+                          "enableIconSize": false,
+                          "extraText": "",
+                          "extraTextColor": "#1E313E",
+                          "extraTextColorConditions": [],
+                          "extraTextConditions": [],
+                          "extraTextPosition": "above-value",
+                          "extraTextSize": "20px",
+                          "extraTextWeight": "font-light",
+                          "icon": "",
+                          "iconColor": "#1E313E",
+                          "iconColorConditions": [],
+                          "iconConditions": [],
+                          "iconGap": "8px",
+                          "iconPosition": "before-value",
+                          "iconSize": "75px",
+                          "iconVerticalOffset": "0px",
+                          "link": "",
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textColorConditions": [],
+                          "textSize": "50px",
+                          "textWeight": "font-light",
+                          "unit": "",
+                          "unitSize": "20px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_vs373_data",
+                              "mapping": "region_3_occupancy",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#f39c12",
+                            "name": "Region 3",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 4,
+                          "sizeX": 2,
+                          "sizeY": 4
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Region 1 Out of Bed"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "enableExtraTextColor": false,
+                          "enableIconColor": false,
+                          "enableIconSize": false,
+                          "extraText": "",
+                          "extraTextColor": "#1E313E",
+                          "extraTextColorConditions": [],
+                          "extraTextConditions": [],
+                          "extraTextPosition": "above-value",
+                          "extraTextSize": "20px",
+                          "extraTextWeight": "font-light",
+                          "icon": "",
+                          "iconColor": "#1E313E",
+                          "iconColorConditions": [],
+                          "iconConditions": [],
+                          "iconGap": "8px",
+                          "iconPosition": "before-value",
+                          "iconSize": "75px",
+                          "iconVerticalOffset": "0px",
+                          "link": "",
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textColorConditions": [],
+                          "textSize": "50px",
+                          "textWeight": "font-light",
+                          "unit": "min",
+                          "unitSize": "20px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_vs373_data",
+                              "mapping": "region_1_out_of_bed_time",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#e67e22",
+                            "name": "Region 1 OOB",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 2,
+                          "row": 4,
+                          "sizeX": 2,
+                          "sizeY": 4
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Region 2 Out of Bed"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "enableExtraTextColor": false,
+                          "enableIconColor": false,
+                          "enableIconSize": false,
+                          "extraText": "",
+                          "extraTextColor": "#1E313E",
+                          "extraTextColorConditions": [],
+                          "extraTextConditions": [],
+                          "extraTextPosition": "above-value",
+                          "extraTextSize": "20px",
+                          "extraTextWeight": "font-light",
+                          "icon": "",
+                          "iconColor": "#1E313E",
+                          "iconColorConditions": [],
+                          "iconConditions": [],
+                          "iconGap": "8px",
+                          "iconPosition": "before-value",
+                          "iconSize": "75px",
+                          "iconVerticalOffset": "0px",
+                          "link": "",
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textColorConditions": [],
+                          "textSize": "50px",
+                          "textWeight": "font-light",
+                          "unit": "min",
+                          "unitSize": "20px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_vs373_data",
+                              "mapping": "region_2_out_of_bed_time",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#c0392b",
+                            "name": "Region 2 OOB",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 4,
+                          "row": 4,
+                          "sizeX": 2,
+                          "sizeY": 4
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Region 3 Out of Bed"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "enableExtraTextColor": false,
+                          "enableIconColor": false,
+                          "enableIconSize": false,
+                          "extraText": "",
+                          "extraTextColor": "#1E313E",
+                          "extraTextColorConditions": [],
+                          "extraTextConditions": [],
+                          "extraTextPosition": "above-value",
+                          "extraTextSize": "20px",
+                          "extraTextWeight": "font-light",
+                          "icon": "",
+                          "iconColor": "#1E313E",
+                          "iconColorConditions": [],
+                          "iconConditions": [],
+                          "iconGap": "8px",
+                          "iconPosition": "before-value",
+                          "iconSize": "75px",
+                          "iconVerticalOffset": "0px",
+                          "link": "",
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textColorConditions": [],
+                          "textSize": "50px",
+                          "textWeight": "font-light",
+                          "unit": "min",
+                          "unitSize": "20px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_vs373_data",
+                              "mapping": "region_3_out_of_bed_time",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#8e44ad",
+                            "name": "Region 3 OOB",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 8,
+                          "sizeX": 6,
+                          "sizeY": 8
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Region Out of Bed Times (24h)"
+                        },
+                        "properties": {
+                          "alignTimeSeries": false,
+                          "dataAppend": false,
+                          "options": "var options = {\n    chart: {\n        type: 'area',\n        stacked: false\n    },\n    dataLabels: {\n        enabled: false\n    },\n    stroke: {\n        curve: 'smooth',\n        width: 2\n    },\n    xaxis: {\n        type: 'datetime',\n        labels: {\n            datetimeUTC: false\n        },\n        tooltip: {\n            enabled: false\n        }\n    },\n    yaxis: {\n        title: {\n            text: 'Time (minutes)'\n        },\n        labels: {\n            formatter: function (val) {\n                if (val !== null && typeof val !== 'undefined')\n                    return val.toFixed(0);\n            }\n        }\n    },\n    tooltip: {\n        x: {\n            format: 'dd/MM/yyyy HH:mm:ss'\n        }\n    },\n    legend: {\n        position: 'top'\n    }\n};\n",
+                          "realTimeUpdate": true
+                        },
+                        "sources": [
+                          {
+                            "aggregation": {},
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_vs373_data",
+                              "mapping": "region_1_out_of_bed_time",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#e67e22",
+                            "name": "Region 1",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          },
+                          {
+                            "aggregation": {},
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_vs373_data",
+                              "mapping": "region_2_out_of_bed_time",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#c0392b",
+                            "name": "Region 2",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          },
+                          {
+                            "aggregation": {},
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_vs373_data",
+                              "mapping": "region_3_out_of_bed_time",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#8e44ad",
+                            "name": "Region 3",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          }
+                        ],
+                        "type": "apex_charts"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
