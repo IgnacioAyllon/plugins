@@ -466,6 +466,20 @@ export class SimCardDetailComponent implements OnChanges {
     );
   }
 
+  hasDailyConsumptionServices(): boolean {
+    if (!this.simCard) return false;
+    return !!(this.simCard.consumptionDailyDataEnabled ||
+              this.simCard.consumptionDailyVoiceEnabled ||
+              this.simCard.consumptionDailySMSEnabled);
+  }
+
+  hasMonthlyConsumptionServices(): boolean {
+    if (!this.simCard) return false;
+    return !!(this.simCard.consumptionMonthlyDataEnabled ||
+              this.simCard.consumptionMonthlyVoiceEnabled ||
+              this.simCard.consumptionMonthlySMSEnabled);
+  }
+
   hasExpenseData(): boolean {
     if (!this.simCard) return false;
     return !!(

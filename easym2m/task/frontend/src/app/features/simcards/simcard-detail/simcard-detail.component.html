@@ -143,6 +143,7 @@
         @if (hasConsumptionData()) {
           <!-- Daily consumption -->
           <div class="tw-mb-4 tw-font-semibold tw-text-sm tw-text-gray-700">Daily Consumption</div>
+          @if (hasDailyConsumptionServices()) {
           <div class="tw-grid tw-grid-cols-1 md:tw-grid-cols-3 tw-gap-4 tw-mb-6">
             @if (simCard.consumptionDailyDataEnabled) {
               <div class="tw-bg-white tw-border tw-rounded-lg tw-p-4">
@@ -199,9 +200,13 @@
               </div>
             }
           </div>
+          } @else {
+            <p class="tw-text-sm tw-text-gray-400 tw-italic tw-mb-6">No daily consumption recorded.</p>
+          }
 
           <!-- Monthly consumption -->
           <div class="tw-mb-4 tw-font-semibold tw-text-sm tw-text-gray-700">Monthly Consumption</div>
+          @if (hasMonthlyConsumptionServices()) {
           <div class="tw-grid tw-grid-cols-1 md:tw-grid-cols-3 tw-gap-4 tw-mb-6">
             @if (simCard.consumptionMonthlyDataEnabled) {
               <div class="tw-bg-white tw-border tw-rounded-lg tw-p-4">
@@ -258,6 +263,9 @@
               </div>
             }
           </div>
+          } @else {
+            <p class="tw-text-sm tw-text-gray-400 tw-italic tw-mb-6">No monthly consumption recorded.</p>
+          }
 
           <!-- Monthly expense overages -->
           @if (hasExpenseData()) {
