@@ -247,6 +247,180 @@ app.delete("/alarm/:id", async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * Returns paginated CDR usage records for a SIM card.
+ * Query params: year, month, service (data|voice|sms), size, page, sorted (true|false)
+ */
+app.get("/simcard/:iccid/usage", async (req: Request, res: Response) => {
+  const { iccid } = req.params;
+  const now = new Date();
+  const year  = parseInt(req.query.year  as string) || now.getFullYear();
+  const month = parseInt(req.query.month as string) || (now.getMonth() + 1);
+  const service = (req.query.service as string) || 'data';
+  const size  = Math.min(parseInt(req.query.size  as string) || 20, 100);
+  const page  = parseInt(req.query.page  as string) || 1;
+  const sorted = req.query.sorted !== 'false';
+
+  if (!settings.apiClientId || !settings.apiPassword || !settings.apiKey) {
+    res.status(400).json({ message: "EasyM2M credentials are not configured", cause: "Go to the Settings tab and enter your API credentials.", code: "CREDENTIALS_MISSING" });
+    return;
+  }
+
+  Log.log(`Fetching usage — ICCID: ${iccid}, ${year}/${month}, service: ${service}`);
+  try {
+    const result = await EasyM2MClient.listSimCardUsage(settings, iccid, year, month, service, size, page, sorted);
+    Log.info(`Usage records fetched for ICCID: ${iccid}`);
+    res.json(result);
+  } catch (error: any) {
+    const apiError = error instanceof EasyM2MApiError ? error : null;
+    Log.error(`Error fetching usage for SIM ${iccid}:`, error.message, "| Code:", apiError?.code ?? 'UNKNOWN');
+    res.status(502).json({
+      message: `Error fetching usage records for SIM ${iccid}`,
+      error: error.message,
+      cause: apiError?.cause ?? "Unexpected error. Check the backend logs.",
+      code: apiError?.code ?? "UNKNOWN_ERROR"
+    });
+  }
+});
+
+/**
+ * Returns aggregated monthly statistics for a SIM card. Only works for Telefónica SIMs.
+ * Query params: year, month
+ */
+app.get("/simcard/:iccid/statistics", async (req: Request, res: Response) => {
+  const { iccid } = req.params;
+  const now = new Date();
+  const year  = parseInt(req.query.year  as string) || now.getFullYear();
+  const month = parseInt(req.query.month as string) || (now.getMonth() + 1);
+
+  if (!settings.apiClientId || !settings.apiPassword || !settings.apiKey) {
+    res.status(400).json({ message: "EasyM2M credentials are not configured", cause: "Go to the Settings tab and enter your API credentials.", code: "CREDENTIALS_MISSING" });
+    return;
+  }
+
+  Log.log(`Fetching statistics — ICCID: ${iccid}, ${year}/${month}`);
+  try {
+    const result = await EasyM2MClient.getSimCardStatistics(settings, iccid, year, month);
+    Log.info(`Statistics fetched for ICCID: ${iccid}`);
+    res.json(result);
+  } catch (error: any) {
+    const apiError = error instanceof EasyM2MApiError ? error : null;
+    Log.error(`Error fetching statistics for SIM ${iccid}:`, error.message, "| Code:", apiError?.code ?? 'UNKNOWN');
+    res.status(502).json({
+      message: `Error fetching statistics for SIM ${iccid}`,
+      error: error.message,
+      cause: apiError?.cause ?? "Unexpected error. Check the backend logs.",
+      code: apiError?.code ?? "UNKNOWN_ERROR"
+    });
+  }
+});
+
+/** Returns the prepaid balance for a SIM card. Only works for Telefónica SIMs. */
+app.get("/simcard/:iccid/balance", async (req: Request, res: Response) => {
+  const { iccid } = req.params;
+
+  if (!settings.apiClientId || !settings.apiPassword || !settings.apiKey) {
+    res.status(400).json({ message: "EasyM2M credentials are not configured", cause: "Go to the Settings tab and enter your API credentials.", code: "CREDENTIALS_MISSING" });
+    return;
+  }
+
+  Log.log(`Fetching SIM balance — ICCID: ${iccid}`);
+  try {
+    const result = await EasyM2MClient.getSimCardBalance(settings, iccid);
+    Log.info(`Balance fetched for ICCID: ${iccid}`);
+    res.json(result);
+  } catch (error: any) {
+    const apiError = error instanceof EasyM2MApiError ? error : null;
+    Log.error(`Error fetching balance for SIM ${iccid}:`, error.message, "| Code:", apiError?.code ?? 'UNKNOWN');
+    res.status(502).json({
+      message: `Error fetching balance for SIM ${iccid}`,
+      error: error.message,
+      cause: apiError?.cause ?? "Unexpected error. Check the backend logs.",
+      code: apiError?.code ?? "UNKNOWN_ERROR"
+    });
+  }
+});
+
+/**
+ * Returns network diagnostics for a SIM card. Only works for Telefónica SIMs.
+ * Query param: type (e.g. 'ping', 'location')
+ */
+app.get("/simcard/:iccid/diagnostics", async (req: Request, res: Response) => {
+  const { iccid } = req.params;
+  const type = (req.query.type as string) || 'ping';
+
+  if (!settings.apiClientId || !settings.apiPassword || !settings.apiKey) {
+    res.status(400).json({ message: "EasyM2M credentials are not configured", cause: "Go to the Settings tab and enter your API credentials.", code: "CREDENTIALS_MISSING" });
+    return;
+  }
+
+  Log.log(`Fetching diagnostics — ICCID: ${iccid}, type: ${type}`);
+  try {
+    const result = await EasyM2MClient.getSimCardDiagnostics(settings, iccid, type);
+    Log.info(`Diagnostics fetched for ICCID: ${iccid}, type: ${type}`);
+    res.json(result);
+  } catch (error: any) {
+    const apiError = error instanceof EasyM2MApiError ? error : null;
+    Log.error(`Error fetching diagnostics for SIM ${iccid}:`, error.message, "| Code:", apiError?.code ?? 'UNKNOWN');
+    res.status(502).json({
+      message: `Error fetching diagnostics for SIM ${iccid}`,
+      error: error.message,
+      cause: apiError?.cause ?? "Unexpected error. Check the backend logs.",
+      code: apiError?.code ?? "UNKNOWN_ERROR"
+    });
+  }
+});
+
+/**
+ * Returns billing invoices for the account for a given year/month.
+ * Query params: year, month
+ */
+app.get("/invoices", async (req: Request, res: Response) => {
+  const now = new Date();
+  const year  = parseInt(req.query.year  as string) || now.getFullYear();
+  const month = parseInt(req.query.month as string) || (now.getMonth() + 1);
+
+  if (!settings.apiClientId || !settings.apiPassword || !settings.apiKey) {
+    res.status(400).json({ message: "EasyM2M credentials are not configured", cause: "Go to the Settings tab and enter your API credentials.", code: "CREDENTIALS_MISSING" });
+    return;
+  }
+
+  Log.log(`Fetching invoices — ${year}/${month}`);
+  try {
+    const result = await EasyM2MClient.listInvoices(settings, year, month);
+    Log.info(`Invoices fetched for ${year}/${month}`);
+    res.json(result);
+  } catch (error: any) {
+    const apiError = error instanceof EasyM2MApiError ? error : null;
+    Log.error("Error fetching invoices:", error.message, "| Code:", apiError?.code ?? 'UNKNOWN');
+    res.status(502).json({
+      message: "Error fetching invoices",
+      error: error.message,
+      cause: apiError?.cause ?? "Unexpected error. Check the backend logs.",
+      code: apiError?.code ?? "UNKNOWN_ERROR"
+    });
+  }
+});
+
+/** Returns the current account balance. */
+app.get("/balance", async (req: Request, res: Response) => {
+  if (!settings.apiClientId || !settings.apiPassword || !settings.apiKey) {
+    res.status(400).json({ message: "EasyM2M credentials are not configured", cause: "Go to the Settings tab and enter your API credentials.", code: "CREDENTIALS_MISSING" });
+    return;
+  }
+
+  Log.log("Fetching account balance");
+  try {
+    const result = await EasyM2MClient.getAccountBalance(settings);
+    Log.info("Account balance fetched");
+    res.json(result);
+  } catch (error: any) {
+    const apiError = error instanceof EasyM2MApiError ? error : null;
+    Log.error("Error fetching account balance:", error.message, "| Code:", apiError?.code ?? 'UNKNOWN');
+    res.status(502).json({ message: "Error fetching account balance", error: error.message, cause: apiError?.cause ?? "Unexpected error. Check the backend logs.", code: apiError?.code ?? "UNKNOWN_ERROR" });
+  }
+});
+
 // Serve the Angular SPA after all API routes
 app.use(FrontEndRouter);
 

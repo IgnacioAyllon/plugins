@@ -6,7 +6,7 @@
   @if (simCard) {
     <nz-tabset nzSize="small" (nzSelectedIndexChange)="onTabChange($event)">
 
-      <!-- ══ TAB 1: OVERVIEW ══════════════════════════════════════════ -->
+      <!-- ══ TAB 0: OVERVIEW ══════════════════════════════════════════════ -->
       <nz-tab nzTitle="Overview">
 
         <!-- Identity -->
@@ -34,6 +34,11 @@
           <nz-descriptions-item nzTitle="Activation Date">
             {{ simCard.activationDate ? (simCard.activationDate | date:'dd/MM/yyyy HH:mm') : '—' }}
           </nz-descriptions-item>
+          @if (simCard.provider) {
+            <nz-descriptions-item nzTitle="Operator">
+              <span class="tw-font-medium tw-capitalize">{{ simCard.provider }}</span>
+            </nz-descriptions-item>
+          }
         </nz-descriptions>
 
         <nz-divider></nz-divider>
@@ -42,47 +47,64 @@
         <nz-descriptions nzTitle="Network & Connectivity" nzBordered nzSize="small" [nzColumn]="2">
           <nz-descriptions-item nzTitle="APN">{{ simCard.apn || '—' }}</nz-descriptions-item>
           <nz-descriptions-item nzTitle="IP Address">
-            <span class="tw-font-mono tw-text-xs">{{ simCard.ipAddress || '—' }}</span>
+            <span class="tw-font-mono tw-text-xs">{{ simCard.ip || simCard.ipAddress || '—' }}</span>
           </nz-descriptions-item>
+          @if (simCard.staticIP) {
+            <nz-descriptions-item nzTitle="Static IP">
+              <span class="tw-font-mono tw-text-xs">{{ simCard.staticIP }}</span>
+            </nz-descriptions-item>
+          }
           <nz-descriptions-item nzTitle="IP Connected">
             @if (simCard.ipConnected !== undefined && simCard.ipConnected !== null) {
               <span [class]="simCard.ipConnected ? 'tw-text-green-600 tw-font-medium' : 'tw-text-red-500'">
                 <fa-icon [icon]="simCard.ipConnected ? faCircleCheck : faCircleXmark" class="tw-mr-1"></fa-icon>
                 {{ simCard.ipConnected ? 'Connected' : 'Disconnected' }}
               </span>
-            } @else {
-              <span>—</span>
-            }
-          </nz-descriptions-item>
-          <nz-descriptions-item nzTitle="GPRS Connected">
-            @if (simCard.gprsConnected !== undefined && simCard.gprsConnected !== null) {
-              <span [class]="simCard.gprsConnected ? 'tw-text-green-600 tw-font-medium' : 'tw-text-gray-400'">
-                {{ simCard.gprsConnected ? 'Yes' : 'No' }}
+            } @else if (simCard.ipStatus !== undefined) {
+              <span [class]="simCard.ipStatus === 1 ? 'tw-text-green-600 tw-font-medium' : 'tw-text-gray-400'">
+                {{ simCard.ipStatus === 1 ? 'Connected' : simCard.ipStatus === 2 ? 'Disconnected' : 'Unknown' }}
               </span>
             } @else {
               <span>—</span>
             }
           </nz-descriptions-item>
+          <nz-descriptions-item nzTitle="GPRS">
+            @if (simCard.gprsConnected !== undefined && simCard.gprsConnected !== null) {
+              <span [class]="simCard.gprsConnected ? 'tw-text-green-600 tw-font-medium' : 'tw-text-gray-400'">
+                {{ simCard.gprsConnected ? 'Yes' : 'No' }}
+              </span>
+            } @else if (simCard.gprsStatus !== undefined) {
+              <span>{{ simCard.gprsStatus === 1 ? 'Connected' : simCard.gprsStatus === 2 ? 'Disconnected' : 'Unknown' }}</span>
+            } @else {
+              <span>—</span>
+            }
+          </nz-descriptions-item>
+          @if (simCard.country) {
+            <nz-descriptions-item nzTitle="Country">{{ simCard.country }}</nz-descriptions-item>
+          }
           @if (simCard.simModel || simCard.simType) {
             <nz-descriptions-item nzTitle="SIM Model">{{ simCard.simModel || '—' }}</nz-descriptions-item>
             <nz-descriptions-item nzTitle="SIM Type">{{ simCard.simType || '—' }}</nz-descriptions-item>
           }
-          @if (simCard.deviceManufacturer || simCard.deviceModel) {
-            <nz-descriptions-item nzTitle="Device Manufacturer">{{ simCard.deviceManufacturer || '—' }}</nz-descriptions-item>
-            <nz-descriptions-item nzTitle="Device Model">{{ simCard.deviceModel || '—' }}</nz-descriptions-item>
+          @if (simCard.commModuleManufacturer || simCard.commModuleModel || simCard.deviceManufacturer || simCard.deviceModel) {
+            <nz-descriptions-item nzTitle="Device">
+              {{ simCard.commModuleManufacturer || simCard.deviceManufacturer || '' }}
+              {{ simCard.commModuleModel || simCard.deviceModel || '' }}
+            </nz-descriptions-item>
           }
-          @if (simCard.latitude !== undefined || simCard.longitude !== undefined) {
+          @if (simCard.automaticLocation || (simCard.latitude !== undefined && simCard.longitude !== undefined)) {
             <nz-descriptions-item nzTitle="Location" [nzSpan]="2">
-              {{ simCard.latitude ?? '—' }}, {{ simCard.longitude ?? '—' }}
+              {{ simCard.automaticLocation?.latitude ?? simCard.latitude ?? '—' }},
+              {{ simCard.automaticLocation?.longitude ?? simCard.longitude ?? '—' }}
             </nz-descriptions-item>
           }
         </nz-descriptions>
 
-        <!-- Extra fields -->
+        <!-- Extra unknown fields -->
         @if (getExtraFields().length > 0) {
           <nz-divider></nz-divider>
           <div class="tw-mb-2 tw-font-semibold tw-text-sm tw-text-gray-700">Additional Data</div>
-          <div class="tw-bg-gray-50 tw-rounded-md tw-p-3 tw-overflow-x-auto tw-max-h-64 tw-overflow-y-auto">
+          <div class="tw-bg-gray-50 tw-rounded-md tw-p-3 tw-overflow-x-auto tw-max-h-48 tw-overflow-y-auto">
             <pre class="tw-text-xs tw-text-gray-700 tw-m-0 tw-whitespace-pre-wrap">{{ getExtraObject() | json }}</pre>
           </div>
         }
@@ -114,14 +136,483 @@
             </nz-descriptions>
           }
         }
-
       </nz-tab>
 
-      <!-- ══ TAB 2: EDIT ══════════════════════════════════════════════ -->
+      <!-- ══ TAB 1: USAGE ═══════════════════════════════════════════════════ -->
+      <nz-tab nzTitle="Usage">
+        @if (hasConsumptionData()) {
+          <!-- Daily consumption -->
+          <div class="tw-mb-4 tw-font-semibold tw-text-sm tw-text-gray-700">Daily Consumption</div>
+          @if (hasDailyConsumptionServices()) {
+          <div class="tw-grid tw-grid-cols-1 md:tw-grid-cols-3 tw-gap-4 tw-mb-6">
+            @if (simCard.consumptionDailyDataEnabled) {
+              <div class="tw-bg-white tw-border tw-rounded-lg tw-p-4">
+                <div class="tw-text-xs tw-text-gray-500 tw-mb-1">Data</div>
+                <div class="tw-font-semibold tw-text-sm tw-mb-2">
+                  {{ formatBytes(simCard.consumptionDailyDataValue) }} / {{ formatBytes(simCard.consumptionDailyDataLimit) }}
+                </div>
+                <nz-progress
+                  [nzPercent]="getPercent(simCard.consumptionDailyDataValue, simCard.consumptionDailyDataLimit)"
+                  [nzStatus]="getProgressStatus(simCard.consumptionDailyDataValue, simCard.consumptionDailyDataLimit)"
+                  nzSize="small">
+                </nz-progress>
+                @if (simCard.consumptionDailyDataThresholdReached) {
+                  <div class="tw-text-xs tw-text-orange-500 tw-mt-1">
+                    <fa-icon [icon]="faTriangleExclamation" class="tw-mr-1"></fa-icon>Threshold reached
+                  </div>
+                }
+              </div>
+            }
+            @if (simCard.consumptionDailyVoiceEnabled) {
+              <div class="tw-bg-white tw-border tw-rounded-lg tw-p-4">
+                <div class="tw-text-xs tw-text-gray-500 tw-mb-1">Voice</div>
+                <div class="tw-font-semibold tw-text-sm tw-mb-2">
+                  {{ formatSeconds(simCard.consumptionDailyVoiceValue) }} / {{ formatSeconds(simCard.consumptionDailyVoiceLimit) }}
+                </div>
+                <nz-progress
+                  [nzPercent]="getPercent(simCard.consumptionDailyVoiceValue, simCard.consumptionDailyVoiceLimit)"
+                  [nzStatus]="getProgressStatus(simCard.consumptionDailyVoiceValue, simCard.consumptionDailyVoiceLimit)"
+                  nzSize="small">
+                </nz-progress>
+                @if (simCard.consumptionDailyVoiceThresholdReached) {
+                  <div class="tw-text-xs tw-text-orange-500 tw-mt-1">
+                    <fa-icon [icon]="faTriangleExclamation" class="tw-mr-1"></fa-icon>Threshold reached
+                  </div>
+                }
+              </div>
+            }
+            @if (simCard.consumptionDailySMSEnabled) {
+              <div class="tw-bg-white tw-border tw-rounded-lg tw-p-4">
+                <div class="tw-text-xs tw-text-gray-500 tw-mb-1">SMS</div>
+                <div class="tw-font-semibold tw-text-sm tw-mb-2">
+                  {{ simCard.consumptionDailySMSValue ?? '—' }} / {{ simCard.consumptionDailySMSLimit ?? '—' }} SMS
+                </div>
+                <nz-progress
+                  [nzPercent]="getPercent(simCard.consumptionDailySMSValue, simCard.consumptionDailySMSLimit)"
+                  [nzStatus]="getProgressStatus(simCard.consumptionDailySMSValue, simCard.consumptionDailySMSLimit)"
+                  nzSize="small">
+                </nz-progress>
+                @if (simCard.consumptionDailySMSThresholdReached) {
+                  <div class="tw-text-xs tw-text-orange-500 tw-mt-1">
+                    <fa-icon [icon]="faTriangleExclamation" class="tw-mr-1"></fa-icon>Threshold reached
+                  </div>
+                }
+              </div>
+            }
+          </div>
+          } @else {
+            <p class="tw-text-sm tw-text-gray-400 tw-italic tw-mb-6">No daily consumption recorded.</p>
+          }
+
+          <!-- Monthly consumption -->
+          <div class="tw-mb-4 tw-font-semibold tw-text-sm tw-text-gray-700">Monthly Consumption</div>
+          @if (hasMonthlyConsumptionServices()) {
+          <div class="tw-grid tw-grid-cols-1 md:tw-grid-cols-3 tw-gap-4 tw-mb-6">
+            @if (simCard.consumptionMonthlyDataEnabled) {
+              <div class="tw-bg-white tw-border tw-rounded-lg tw-p-4">
+                <div class="tw-text-xs tw-text-gray-500 tw-mb-1">Data</div>
+                <div class="tw-font-semibold tw-text-sm tw-mb-2">
+                  {{ formatBytes(simCard.consumptionMonthlyDataValue) }} / {{ formatBytes(simCard.consumptionMonthlyDataLimit) }}
+                </div>
+                <nz-progress
+                  [nzPercent]="getPercent(simCard.consumptionMonthlyDataValue, simCard.consumptionMonthlyDataLimit)"
+                  [nzStatus]="getProgressStatus(simCard.consumptionMonthlyDataValue, simCard.consumptionMonthlyDataLimit)"
+                  nzSize="small">
+                </nz-progress>
+                @if (simCard.consumptionMonthlyDataThresholdReached) {
+                  <div class="tw-text-xs tw-text-orange-500 tw-mt-1">
+                    <fa-icon [icon]="faTriangleExclamation" class="tw-mr-1"></fa-icon>Threshold reached
+                  </div>
+                }
+              </div>
+            }
+            @if (simCard.consumptionMonthlyVoiceEnabled) {
+              <div class="tw-bg-white tw-border tw-rounded-lg tw-p-4">
+                <div class="tw-text-xs tw-text-gray-500 tw-mb-1">Voice</div>
+                <div class="tw-font-semibold tw-text-sm tw-mb-2">
+                  {{ formatSeconds(simCard.consumptionMonthlyVoiceValue) }} / {{ formatSeconds(simCard.consumptionMonthlyVoiceLimit) }}
+                </div>
+                <nz-progress
+                  [nzPercent]="getPercent(simCard.consumptionMonthlyVoiceValue, simCard.consumptionMonthlyVoiceLimit)"
+                  [nzStatus]="getProgressStatus(simCard.consumptionMonthlyVoiceValue, simCard.consumptionMonthlyVoiceLimit)"
+                  nzSize="small">
+                </nz-progress>
+                @if (simCard.consumptionMonthlyVoiceThresholdReached) {
+                  <div class="tw-text-xs tw-text-orange-500 tw-mt-1">
+                    <fa-icon [icon]="faTriangleExclamation" class="tw-mr-1"></fa-icon>Threshold reached
+                  </div>
+                }
+              </div>
+            }
+            @if (simCard.consumptionMonthlySMSEnabled) {
+              <div class="tw-bg-white tw-border tw-rounded-lg tw-p-4">
+                <div class="tw-text-xs tw-text-gray-500 tw-mb-1">SMS</div>
+                <div class="tw-font-semibold tw-text-sm tw-mb-2">
+                  {{ simCard.consumptionMonthlySMSValue ?? '—' }} / {{ simCard.consumptionMonthlySMSLimit ?? '—' }} SMS
+                </div>
+                <nz-progress
+                  [nzPercent]="getPercent(simCard.consumptionMonthlySMSValue, simCard.consumptionMonthlySMSLimit)"
+                  [nzStatus]="getProgressStatus(simCard.consumptionMonthlySMSValue, simCard.consumptionMonthlySMSLimit)"
+                  nzSize="small">
+                </nz-progress>
+                @if (simCard.consumptionMonthlySMSThresholdReached) {
+                  <div class="tw-text-xs tw-text-orange-500 tw-mt-1">
+                    <fa-icon [icon]="faTriangleExclamation" class="tw-mr-1"></fa-icon>Threshold reached
+                  </div>
+                }
+              </div>
+            }
+          </div>
+          } @else {
+            <p class="tw-text-sm tw-text-gray-400 tw-italic tw-mb-6">No monthly consumption recorded.</p>
+          }
+
+          <!-- Monthly expense overages -->
+          @if (hasExpenseData()) {
+            <nz-divider></nz-divider>
+            <div class="tw-mb-4 tw-font-semibold tw-text-sm tw-text-gray-700">Monthly Expense Overages</div>
+            <nz-descriptions nzBordered nzSize="small" [nzColumn]="2">
+              @if (simCard.expenseMonthlyDataOverLimit) {
+                <nz-descriptions-item nzTitle="Data overage">
+                  {{ simCard.expenseMonthlyDataOverValue ?? 0 | number:'1.2-2' }} € / {{ simCard.expenseMonthlyDataOverLimit | number:'1.2-2' }} €
+                  @if (simCard.expenseMonthlyDataOverThresholdReached) {
+                    <nz-tag nzColor="warning" class="tw-ml-2">Limit reached</nz-tag>
+                  }
+                </nz-descriptions-item>
+              }
+              @if (simCard.expenseMonthlyVoiceOverLimit) {
+                <nz-descriptions-item nzTitle="Voice overage">
+                  {{ simCard.expenseMonthlyVoiceOverValue ?? 0 | number:'1.2-2' }} € / {{ simCard.expenseMonthlyVoiceOverLimit | number:'1.2-2' }} €
+                  @if (simCard.expenseMonthlyVoiceOverThresholdReached) {
+                    <nz-tag nzColor="warning" class="tw-ml-2">Limit reached</nz-tag>
+                  }
+                </nz-descriptions-item>
+              }
+              @if (simCard.expenseMonthlySMSOverLimit) {
+                <nz-descriptions-item nzTitle="SMS overage">
+                  {{ simCard.expenseMonthlySMSOverValue ?? 0 | number:'1.2-2' }} € / {{ simCard.expenseMonthlySMSOverLimit | number:'1.2-2' }} €
+                  @if (simCard.expenseMonthlySMSOverThresholdReached) {
+                    <nz-tag nzColor="warning" class="tw-ml-2">Limit reached</nz-tag>
+                  }
+                </nz-descriptions-item>
+              }
+              @if (simCard.expenseMonthlyTotalOverLimit) {
+                <nz-descriptions-item nzTitle="Total overage" [nzSpan]="2">
+                  <span class="tw-font-semibold">
+                    {{ simCard.expenseMonthlyTotalOverValue ?? 0 | number:'1.2-2' }} € / {{ simCard.expenseMonthlyTotalOverLimit | number:'1.2-2' }} €
+                  </span>
+                  @if (simCard.expenseMonthlyTotalOverThresholdReached) {
+                    <nz-tag nzColor="error" class="tw-ml-2">Limit reached</nz-tag>
+                  }
+                </nz-descriptions-item>
+              }
+            </nz-descriptions>
+          }
+
+          <nz-divider></nz-divider>
+        } @else {
+          <nz-empty nzNotFoundContent="No consumption data available for this SIM card." class="tw-py-6"></nz-empty>
+        }
+
+        <!-- CDR history -->
+        <div class="tw-flex tw-items-center tw-justify-between tw-mb-3">
+          <span class="tw-font-semibold tw-text-sm tw-text-gray-700">
+            <fa-icon [icon]="faDatabase" class="tw-mr-2 tw-text-gray-500"></fa-icon>Usage History (CDR)
+          </span>
+          <button nz-button nzSize="small" (click)="usageLoaded = false; loadUsage()" [disabled]="usageLoading">
+            <fa-icon [icon]="faRotateRight" [class.tw-animate-spin]="usageLoading"></fa-icon>
+          </button>
+        </div>
+        <!-- Filters -->
+        <div class="tw-flex tw-gap-2 tw-mb-3 tw-flex-wrap">
+          <nz-select [(ngModel)]="usageYear" (ngModelChange)="onUsageFilterChange()" nzSize="small" style="width:90px">
+            @for (y of [2024, 2025, 2026]; track y) {
+              <nz-option [nzValue]="y" [nzLabel]="y.toString()"></nz-option>
+            }
+          </nz-select>
+          <nz-select [(ngModel)]="usageMonth" (ngModelChange)="onUsageFilterChange()" nzSize="small" style="width:110px">
+            @for (m of [1,2,3,4,5,6,7,8,9,10,11,12]; track m) {
+              <nz-option [nzValue]="m" [nzLabel]="m.toString().padStart(2,'0')"></nz-option>
+            }
+          </nz-select>
+          <nz-select [(ngModel)]="usageService" (ngModelChange)="onUsageFilterChange()" nzSize="small" style="width:90px">
+            <nz-option nzValue="data"  nzLabel="Data"></nz-option>
+            <nz-option nzValue="voice" nzLabel="Voice"></nz-option>
+            <nz-option nzValue="sms"   nzLabel="SMS"></nz-option>
+          </nz-select>
+        </div>
+        @if (usageError) {
+          <nz-alert nzType="error" [nzMessage]="usageError" nzShowIcon class="tw-mb-4"></nz-alert>
+        }
+        <nz-spin [nzSpinning]="usageLoading">
+          @if (usageLoaded && usageRecords.length === 0 && !usageError) {
+            <nz-empty nzNotFoundContent="No CDR records found for the selected period."></nz-empty>
+          }
+          @if (usageRecords.length > 0) {
+            <nz-table
+              [nzData]="usageRecords"
+              nzSize="small"
+              [nzFrontPagination]="false"
+              [nzTotal]="usageTotal"
+              [nzPageIndex]="usagePageIndex"
+              [nzPageSize]="usagePageSize"
+              (nzPageIndexChange)="onUsagePageChange($event)">
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>MSISDN</th>
+                  @if (usageService === 'data') {
+                    <th>APN</th>
+                    <th>Uploaded</th>
+                    <th>Downloaded</th>
+                    <th>Total</th>
+                  }
+                  @if (usageService === 'voice') {
+                    <th>Called number</th>
+                    <th>Duration</th>
+                    <th>Zone</th>
+                  }
+                  @if (usageService === 'sms') {
+                    <th>Destination</th>
+                    <th>Zone</th>
+                  }
+                </tr>
+              </thead>
+              <tbody>
+                @for (rec of usageRecords; track $index) {
+                  <tr>
+                    <td class="tw-font-mono tw-text-xs">{{ rec.timeStamp || '—' }}</td>
+                    <td class="tw-font-mono tw-text-xs">{{ rec.msisdn || '—' }}</td>
+                    @if (usageService === 'data') {
+                      <td class="tw-text-xs">{{ rec.dataDetailApn || '—' }}</td>
+                      <td class="tw-text-xs">{{ formatBytes(rec.dataDetailUploadedDataInBytes) }}</td>
+                      <td class="tw-text-xs">{{ formatBytes(rec.dataDetailDownloadedDataInBytes) }}</td>
+                      <td class="tw-text-xs tw-font-medium">{{ formatBytes(rec.dataDetailTransferedDataInBytes) }}</td>
+                    }
+                    @if (usageService === 'voice') {
+                      <td class="tw-text-xs">{{ rec.callDetailCalledCallingNumber || '—' }}</td>
+                      <td class="tw-text-xs">{{ rec.callDetailDuration || '—' }}</td>
+                      <td class="tw-text-xs">{{ rec.callDetailZone || '—' }}</td>
+                    }
+                    @if (usageService === 'sms') {
+                      <td class="tw-text-xs">{{ rec.smsDetailDestination || '—' }}</td>
+                      <td class="tw-text-xs">{{ rec.smsDetailOriginZone || '—' }}</td>
+                    }
+                  </tr>
+                }
+              </tbody>
+            </nz-table>
+          }
+        </nz-spin>
+      </nz-tab>
+
+      <!-- ══ TAB 2: STATISTICS ══════════════════════════════════════════════ -->
+      <nz-tab nzTitle="Statistics">
+        @if (!isTelefonica) {
+          <nz-alert
+            nzType="warning"
+            nzShowIcon
+            [nzMessage]="'Operator not supported: ' + providerName"
+            nzDescription="Statistics are currently only available for Telefónica SIM cards. This SIM card uses a different operator and the EasyM2M API may return an error when querying this data."
+            class="tw-mb-4">
+          </nz-alert>
+          <div class="tw-flex tw-justify-end tw-mb-4">
+            <button nz-button nzSize="small" (click)="loadStatistics()">Try anyway</button>
+          </div>
+        }
+        <!-- Period selector -->
+        <div class="tw-flex tw-items-center tw-gap-2 tw-mb-4">
+          <span class="tw-text-sm tw-text-gray-600">Period:</span>
+          <nz-select [(ngModel)]="statsYear" (ngModelChange)="onStatsFilterChange()" nzSize="small" style="width:90px">
+            @for (y of [2024, 2025, 2026]; track y) {
+              <nz-option [nzValue]="y" [nzLabel]="y.toString()"></nz-option>
+            }
+          </nz-select>
+          <nz-select [(ngModel)]="statsMonth" (ngModelChange)="onStatsFilterChange()" nzSize="small" style="width:110px">
+            @for (m of [1,2,3,4,5,6,7,8,9,10,11,12]; track m) {
+              <nz-option [nzValue]="m" [nzLabel]="m.toString().padStart(2,'0')"></nz-option>
+            }
+          </nz-select>
+          <button nz-button nzSize="small" (click)="loadStatistics()" [disabled]="statsLoading">
+            <fa-icon [icon]="faRotateRight"></fa-icon>
+          </button>
+        </div>
+        @if (statsError) {
+          <nz-alert nzType="error" [nzMessage]="statsError" nzShowIcon class="tw-mb-4">
+          </nz-alert>
+          @if (statsError.includes('Telefónica') || statsError.includes('operator')) {
+            <div class="tw-text-xs tw-text-gray-500 tw-mb-4 tw-bg-gray-50 tw-p-3 tw-rounded tw-border">
+              The EasyM2M API confirmed this feature is not available for the <b>{{ providerName }}</b> operator.
+              Statistics are only supported for Telefónica SIM cards.
+            </div>
+          }
+        }
+        <nz-spin [nzSpinning]="statsLoading" nzTip="Loading statistics...">
+          @if (statsData !== null) {
+            <div class="tw-grid tw-grid-cols-2 md:tw-grid-cols-4 tw-gap-4">
+              <div class="tw-bg-white tw-border tw-rounded-lg tw-p-4 tw-text-center">
+                <div class="tw-text-2xl tw-font-bold tw-text-gray-800">{{ statsData.calls ?? '—' }}</div>
+                <div class="tw-text-xs tw-text-gray-500 tw-mt-1">Calls</div>
+              </div>
+              <div class="tw-bg-white tw-border tw-rounded-lg tw-p-4 tw-text-center">
+                <div class="tw-text-2xl tw-font-bold tw-text-gray-800">{{ formatSeconds(statsData.seconds) }}</div>
+                <div class="tw-text-xs tw-text-gray-500 tw-mt-1">Voice time</div>
+              </div>
+              <div class="tw-bg-white tw-border tw-rounded-lg tw-p-4 tw-text-center">
+                <div class="tw-text-2xl tw-font-bold tw-text-gray-800">{{ statsData.sms ?? '—' }}</div>
+                <div class="tw-text-xs tw-text-gray-500 tw-mt-1">SMS</div>
+              </div>
+              <div class="tw-bg-white tw-border tw-rounded-lg tw-p-4 tw-text-center">
+                <div class="tw-text-2xl tw-font-bold tw-text-gray-800">{{ statsData.transmissions ?? '—' }}</div>
+                <div class="tw-text-xs tw-text-gray-500 tw-mt-1">Data sessions</div>
+              </div>
+            </div>
+            <nz-divider></nz-divider>
+            <nz-descriptions nzTitle="Data transfer" nzBordered nzSize="small" [nzColumn]="3">
+              <nz-descriptions-item nzTitle="Uploaded">{{ formatBytes(statsData.uploadedBytes) }}</nz-descriptions-item>
+              <nz-descriptions-item nzTitle="Downloaded">{{ formatBytes(statsData.downloadedBytes) }}</nz-descriptions-item>
+              <nz-descriptions-item nzTitle="Total transferred">
+                <span class="tw-font-semibold">{{ formatBytes(statsData.transferedBytes) }}</span>
+              </nz-descriptions-item>
+            </nz-descriptions>
+          }
+          @if (!statsLoaded && !statsLoading) {
+            <div class="tw-flex tw-justify-center tw-py-6">
+              <button nz-button nzType="primary" nzGhost (click)="loadStatistics()">
+                <fa-icon [icon]="faChartLine" class="tw-mr-2"></fa-icon>Load statistics
+              </button>
+            </div>
+          }
+          @if (statsLoaded && statsData === null && !statsError) {
+            <nz-empty nzNotFoundContent="No statistics data available for this period."></nz-empty>
+          }
+        </nz-spin>
+      </nz-tab>
+
+      <!-- ══ TAB 3: BALANCE ═════════════════════════════════════════════════ -->
+      <nz-tab nzTitle="Balance">
+        @if (!isTelefonica) {
+          <nz-alert
+            nzType="warning"
+            nzShowIcon
+            [nzMessage]="'Operator not supported: ' + providerName"
+            nzDescription="SIM card balance is currently only available for Telefónica SIM cards. This SIM card uses a different operator and the EasyM2M API may return an error when querying this data."
+            class="tw-mb-4">
+          </nz-alert>
+          <div class="tw-flex tw-justify-end tw-mb-4">
+            <button nz-button nzSize="small" (click)="loadBalance()">Try anyway</button>
+          </div>
+        }
+        @if (balanceError) {
+          <nz-alert nzType="error" [nzMessage]="balanceError" nzShowIcon class="tw-mb-4">
+          </nz-alert>
+          @if (balanceError.includes('Telefónica') || balanceError.includes('operator')) {
+            <div class="tw-text-xs tw-text-gray-500 tw-mb-4 tw-bg-gray-50 tw-p-3 tw-rounded tw-border">
+              The EasyM2M API confirmed this feature is not available for the <b>{{ providerName }}</b> operator.
+              Balance queries are only supported for Telefónica SIM cards.
+            </div>
+          }
+        }
+        <nz-spin [nzSpinning]="balanceLoading" nzTip="Loading balance...">
+          @if (simBalance !== null) {
+            <div class="tw-flex tw-flex-col tw-items-center tw-py-8">
+              <div class="tw-text-gray-500 tw-text-sm tw-mb-2">Prepaid Balance</div>
+              <div class="tw-text-4xl tw-font-bold tw-text-gray-800">
+                {{ simBalance.balance | number:'1.2-2' }} €
+              </div>
+              <div class="tw-mt-4">
+                <button nz-button nzSize="small" (click)="balanceLoaded = false; loadBalance()">
+                  <fa-icon [icon]="faRotateRight" class="tw-mr-1"></fa-icon>Refresh
+                </button>
+              </div>
+            </div>
+          }
+          @if (!balanceLoaded && isTelefonica && !balanceLoading) {
+            <div class="tw-flex tw-justify-center tw-py-6">
+              <button nz-button nzType="primary" nzGhost (click)="loadBalance()">
+                <fa-icon [icon]="faWallet" class="tw-mr-2"></fa-icon>Load balance
+              </button>
+            </div>
+          }
+        </nz-spin>
+      </nz-tab>
+
+      <!-- ══ TAB 4: DIAGNOSTICS ═════════════════════════════════════════════ -->
+      <nz-tab nzTitle="Diagnostics">
+        @if (!isTelefonica) {
+          <nz-alert
+            nzType="warning"
+            nzShowIcon
+            [nzMessage]="'Operator not supported: ' + providerName"
+            nzDescription="Network diagnostics are currently only available for Telefónica SIM cards. This SIM card uses a different operator and the EasyM2M API may return an error when querying this data."
+            class="tw-mb-4">
+          </nz-alert>
+          <div class="tw-flex tw-justify-end tw-mb-4">
+            <button nz-button nzSize="small" (click)="loadDiagnostics()">Try anyway</button>
+          </div>
+        }
+        @if (diagError) {
+          <nz-alert nzType="error" [nzMessage]="diagError" nzShowIcon class="tw-mb-4">
+          </nz-alert>
+          @if (diagError.includes('Telefónica') || diagError.includes('operator')) {
+            <div class="tw-text-xs tw-text-gray-500 tw-mb-4 tw-bg-gray-50 tw-p-3 tw-rounded tw-border">
+              The EasyM2M API confirmed this feature is not available for the <b>{{ providerName }}</b> operator.
+              Diagnostics are only supported for Telefónica SIM cards.
+            </div>
+          }
+        }
+        <!-- Diagnostic type selector -->
+        <div class="tw-flex tw-items-center tw-gap-2 tw-mb-4">
+          <span class="tw-text-sm tw-text-gray-600">Type:</span>
+          <nz-select [(ngModel)]="diagType" nzSize="small" style="width:260px">
+            @for (t of diagTypes; track t.value) {
+              <nz-option [nzValue]="t.value" [nzLabel]="t.label"></nz-option>
+            }
+          </nz-select>
+          <button nz-button nzSize="small" nzType="primary" nzGhost (click)="diagLoaded = false; loadDiagnostics()" [disabled]="diagLoading">
+            <fa-icon [icon]="faStethoscope" class="tw-mr-1"></fa-icon>Run
+          </button>
+        </div>
+        <nz-spin [nzSpinning]="diagLoading" nzTip="Running diagnostics...">
+          @if (diagData !== null) {
+            @if (diagData['output']) {
+              <div class="tw-bg-gray-900 tw-text-green-400 tw-font-mono tw-text-sm tw-rounded-lg tw-p-4 tw-my-2">
+                {{ diagData['output'] }}
+              </div>
+              <div class="tw-text-xs tw-text-gray-400 tw-mt-2">
+                Output format: <code>&lt;TYPE&gt;_&lt;UP|DOWN&gt;</code> — UP indicates the test passed, DOWN indicates failure.
+              </div>
+            } @else if (diagEntries().length > 0) {
+              <nz-descriptions nzBordered nzSize="small" [nzColumn]="2">
+                @for (entry of diagEntries(); track entry.key) {
+                  <nz-descriptions-item [nzTitle]="entry.key">
+                    <span class="tw-font-mono tw-text-xs">{{ entry.value }}</span>
+                  </nz-descriptions-item>
+                }
+              </nz-descriptions>
+            } @else {
+              <nz-empty nzNotFoundContent="No diagnostic data returned."></nz-empty>
+            }
+            <div class="tw-flex tw-justify-end tw-mt-3">
+              <button nz-button nzSize="small" (click)="diagLoaded = false; loadDiagnostics()">
+                <fa-icon [icon]="faRotateRight" class="tw-mr-1"></fa-icon>Re-run
+              </button>
+            </div>
+          }
+          @if (!diagLoaded && !diagLoading) {
+            <div class="tw-flex tw-justify-center tw-py-6">
+              <button nz-button nzType="primary" nzGhost (click)="loadDiagnostics()">
+                <fa-icon [icon]="faStethoscope" class="tw-mr-2"></fa-icon>Run diagnostics
+              </button>
+            </div>
+          }
+        </nz-spin>
+      </nz-tab>
+
+      <!-- ══ TAB 5: EDIT ════════════════════════════════════════════════════ -->
       <nz-tab nzTitle="Edit">
         <form nz-form [formGroup]="editForm" nzLayout="vertical" class="tw-max-w-lg">
 
-          <!-- Basic info -->
           <div class="tw-mb-4 tw-font-semibold tw-text-sm tw-text-gray-700">Basic Information</div>
 
           <nz-form-item>

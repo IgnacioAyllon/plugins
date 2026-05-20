@@ -1,0 +1,145 @@
+<!-- Account balance card -->
+<div class="tw-mb-6">
+  <nz-card nzSize="small" nzType="inner" [nzTitle]="balanceTitleTemplate" [nzExtra]="balanceExtraTemplate">
+    <nz-spin [nzSpinning]="balanceLoading">
+      @if (balanceError) {
+        <nz-alert nzType="error" [nzMessage]="balanceError" nzShowIcon></nz-alert>
+      } @else if (balance !== null) {
+        <div class="tw-flex tw-items-center tw-gap-8 tw-py-2">
+          <div>
+            <div class="tw-text-xs tw-text-gray-500 tw-mb-1">Available Account Balance</div>
+            <div class="tw-text-3xl tw-font-bold tw-text-gray-800">
+              {{ balance.balance | number:'1.2-2' }} €
+            </div>
+          </div>
+          <div class="tw-text-xs tw-text-gray-400">
+            This is the prepaid credit balance available for your EasyM2M account.<br>
+            Individual SIM card prepaid balances can be checked in each SIM card's Balance tab.
+          </div>
+        </div>
+      } @else if (!balanceLoading) {
+        <nz-empty nzNotFoundContent="Could not load balance." [nzNotFoundFooter]="retryBalance"></nz-empty>
+        <ng-template #retryBalance>
+          <button nz-button nzSize="small" (click)="loadBalance()">Retry</button>
+        </ng-template>
+      }
+    </nz-spin>
+  </nz-card>
+</div>
+
+<ng-template #balanceTitleTemplate>
+  <span class="tw-mr-2"><fa-icon [icon]="faWallet"></fa-icon></span>
+  <span class="tw-font-bold">Account Balance</span>
+</ng-template>
+<ng-template #balanceExtraTemplate>
+  <button nz-button nzSize="small" (click)="loadBalance()" [disabled]="balanceLoading" nz-tooltip="Refresh balance">
+    <fa-icon [icon]="faRotateRight"></fa-icon>
+  </button>
+</ng-template>
+
+<!-- Invoices table -->
+<nz-card nzSize="small" nzType="inner" [nzTitle]="invoicesTitleTemplate" [nzExtra]="invoicesExtraTemplate" [nzBodyStyle]="{'padding': 0}">
+  <nz-spin [nzSpinning]="invoicesLoading">
+    @if (invoicesError) {
+      <div class="tw-p-4">
+        <nz-alert nzType="error" [nzMessage]="invoicesError" nzShowIcon></nz-alert>
+      </div>
+    } @else {
+      <nz-table
+        [nzData]="invoices"
+        nzSize="small"
+        [nzFrontPagination]="true"
+        [nzPageSize]="20"
+        [nzShowSizeChanger]="false">
+        <thead>
+          <tr>
+            <th nzWidth="40px"></th>
+            <th>Number</th>
+            <th>Period</th>
+            <th>Date</th>
+            <th class="tw-text-right">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (invoice of invoices; track invoice.number) {
+            <tr
+              class="tw-cursor-pointer hover:tw-bg-gray-50"
+              (click)="toggleRow(invoice.number)">
+              <td class="tw-text-center tw-text-gray-400">
+                {{ isExpanded(invoice.number) ? '▼' : '▶' }}
+              </td>
+              <td>
+                <span class="tw-font-mono tw-text-xs tw-font-medium">{{ invoice.number }}</span>
+              </td>
+              <td class="tw-text-sm">{{ invoice.billPeriod }}</td>
+              <td class="tw-text-sm">{{ invoice.date | date:'dd/MM/yyyy' }}</td>
+              <td class="tw-text-right tw-font-semibold">
+                {{ invoiceTotal(invoice) | number:'1.2-2' }} €
+              </td>
+            </tr>
+            @if (isExpanded(invoice.number)) {
+              <tr>
+                <td colspan="5" class="tw-bg-gray-50 tw-py-0">
+                  <table class="tw-w-full tw-text-xs tw-mb-0">
+                    <thead>
+                      <tr class="tw-text-gray-500">
+                        <th class="tw-pl-8 tw-py-2 tw-text-left tw-font-semibold">Detail</th>
+                        <th class="tw-py-2 tw-text-right tw-font-semibold">Qty</th>
+                        <th class="tw-py-2 tw-text-right tw-font-semibold">Unit price</th>
+                        <th class="tw-py-2 tw-text-right tw-font-semibold tw-pr-4">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (item of invoice.items; track $index) {
+                        <tr class="tw-border-t">
+                          <td class="tw-pl-8 tw-py-2">{{ item.detail }}</td>
+                          <td class="tw-py-2 tw-text-right">{{ item.qty }}</td>
+                          <td class="tw-py-2 tw-text-right">{{ item.unitPrice | number:'1.2-2' }} €</td>
+                          <td class="tw-py-2 tw-text-right tw-pr-4 tw-font-medium">{{ item.total | number:'1.2-2' }} €</td>
+                        </tr>
+                      }
+                      <tr class="tw-border-t tw-bg-white">
+                        <td colspan="3" class="tw-pl-8 tw-py-2 tw-font-semibold tw-text-right">Invoice total:</td>
+                        <td class="tw-py-2 tw-text-right tw-pr-4 tw-font-bold">{{ invoiceTotal(invoice) | number:'1.2-2' }} €</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </td>
+              </tr>
+            }
+          }
+        </tbody>
+      </nz-table>
+      @if (!invoicesLoading && invoices.length === 0) {
+        <div class="tw-py-4">
+          <nz-empty nzNotFoundContent="No invoices found for this account."></nz-empty>
+        </div>
+      }
+    }
+  </nz-spin>
+</nz-card>
+
+<ng-template #invoicesTitleTemplate>
+  <span class="tw-mr-2"><fa-icon [icon]="faFileInvoiceDollar"></fa-icon></span>
+  <span class="tw-font-bold">Invoices</span>
+  @if (invoices.length > 0) {
+    <span class="tw-ml-2 tw-text-xs tw-text-gray-500 tw-font-normal">{{ invoices.length }} records</span>
+  }
+</ng-template>
+<ng-template #invoicesExtraTemplate>
+  <div class="tw-flex tw-gap-2 tw-items-center">
+    <nz-select [(ngModel)]="invoicesYear" (ngModelChange)="onInvoicePeriodChange()" nzSize="small" style="width:90px">
+      @for (y of [2023, 2024, 2025, 2026]; track y) {
+        <nz-option [nzValue]="y" [nzLabel]="y.toString()"></nz-option>
+      }
+    </nz-select>
+    <nz-select [(ngModel)]="invoicesMonth" (ngModelChange)="onInvoicePeriodChange()" nzSize="small" style="width:80px">
+      @for (m of [1,2,3,4,5,6,7,8,9,10,11,12]; track m) {
+        <nz-option [nzValue]="m" [nzLabel]="m.toString().padStart(2,'0')"></nz-option>
+      }
+    </nz-select>
+    <button nz-button nzSize="small" (click)="loadInvoices()" [disabled]="invoicesLoading" nz-tooltip="Refresh">
+      <fa-icon [icon]="faRotateRight"></fa-icon>
+    </button>
+  </div>
+</ng-template>
