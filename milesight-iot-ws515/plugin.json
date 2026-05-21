@@ -1,760 +1,759 @@
 {
-  "name": "milesight_iot_ws515",
-  "version": "1.0.0",
-  "description": "WS51x is an 86-type in-wall smart socket panel withastylishandminimalist design that combines power control andelectricityconsumption statistics features",
-  "author": "Thinger.io",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/thinger-io/plugins.git",
-    "directory": "milesight-iot-ws515"
-  },
-  "metadata": {
-    "name": "Milesight-Iot WS515",
-    "description": "WS51x is an 86-type in-wall smart socket panel withastylishandminimalist design that combines power control andelectricityconsumption statistics features",
-    "image": "assets/ws515.png",
-    "category": "devices",
-    "vendor": "milesight-iot"
-  },
-  "resources": {
-    "products": [
-      {
-        "description": "WS51x is an 86-type in-wall smart socket panel withastylishandminimalist design that combines power control andelectricityconsumption statistics features",
-        "enabled": true,
+    "name": "milesight-iot-ws515",
+    "version": "1.0.0",
+    "description": "WS51x is an 86-type in-wall smart socket panel withastylishandminimalist design that combines power control andelectricityconsumption statistics features.",
+    "author": "Thinger.io",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/thinger-io/plugins.git",
+        "directory": "milesight-iot-ws515"
+    },
+    "metadata": {
         "name": "Milesight-Iot WS515",
-        "product": "milesight_iot_ws515",
-        "profile": {
-          "api": {
-            "downlink": {
-              "enabled": true,
-              "handle_connectivity": false,
-              "request": {
-                "data": {
-                  "path": "/downlink",
-                  "payload": "{\r\n    \"data\"    : \"{{payload.data=\"\"}}\",\r\n    \"port\"    :  {{payload.port=2}},\r\n    \"priority\":  {{payload.priority=3}},\r\n    \"confirmed\" :  {{payload.confirmed=false}},\r\n    \"uplink\"  :  {{property.uplink}} \r\n}",
-                  "payload_function": "",
-                  "payload_type": "",
-                  "plugin": "{{property.uplink.source}}",
-                  "target": "plugin_endpoint"
-                }
-              },
-              "response": {
-                "data": {
-                  "source": "request_response"
-                }
-              }
-            },
-            "uplink": {
-              "enabled": true,
-              "handle_connectivity": true,
-              "request": {
-                "data": {
-                  "payload": "{{payload}}",
-                  "payload_function": "",
-                  "payload_type": "source_payload",
-                  "resource_stream": "uplink",
-                  "target": "resource_stream"
-                }
-              },
-              "response": {
-                "data": {
-                  "source": "request_response"
-                }
-              }
-            }
-          },
-          "autoprovisions": {
-            "device_autoprovisioning": {
-              "config": {
-                "mode": "pattern",
-                "pattern": "ws51._.*"
-              },
-              "enabled": true
-            }
-          },
-          "buckets": {
-            "milesight_ws515_data": {
-              "backend": "mongodb",
-              "data": {
-                "payload": "{{payload}}",
-                "payload_function": "",
-                "payload_type": "source_payload",
-                "resource_stream": "uplink_decoded",
-                "target": "resource_stream"
-              },
-              "enabled": true,
-              "retention": {
-                "period": 3,
-                "unit": "months"
-              },
-              "tags": []
-            }
-          },
-          "code": {
-            "code": "function decodeThingerUplink(thingerData) {\n    // 0. If data has already been decoded, we will return it\n    if (thingerData.decodedPayload) return thingerData.decodedPayload;\n    \n    // 1. Extract and Validate Input\n    // We need 'payload' (hex string) and 'fPort' (integer)\n    const hexPayload = thingerData.payload || \"\";\n    const port = thingerData.fPort || 1;\n\n    // 2. Convert Hex String to Byte Array\n    const bytes = [];\n    for (let i = 0; i < hexPayload.length; i += 2) {\n        bytes.push(parseInt(hexPayload.substr(i, 2), 16));\n    }\n\n    // 3. Dynamic Function Detection and Execution\n    \n    // CASE A: (The Things Stack v3)\n    if (typeof decodeUplink === 'function') {\n        try {\n            const input = {\n                bytes: bytes,\n                fPort: port\n            };\n            var result = decodeUplink(input);\n            \n            if (result.data) return result.data;\n\n            return result; \n        } catch (e) {\n            console.error(\"Error inside decodeUplink:\", e);\n            throw e;\n        }\n    }\n\n    // CASE B: Legacy TTN (v2)\n    else if (typeof Decoder === 'function') {\n        try {\n            return Decoder(bytes, port);\n        } catch (e) {\n            console.error(\"Error inside Decoder:\", e);\n            throw e;\n        }\n    }\n\n    // CASE C: No decoder found\n    else {\n        throw new Error(\"No compatible TTN decoder function (decodeUplink or Decoder) found in scope.\");\n    }\n}\n\n\n// TTN decoder\nfunction decodeUplink(input) {\n    var res = Decoder(input.bytes, input.fPort);\n    if (res.error) {\n        return {\n            errors: [res.error],\n        };\n    }\n    return {\n        data: res,\n    };\n}\n/**\n * Payload Encoder\n *\n * Copyright 2025 Milesight IoT\n *\n * @product WS51x\n */\nvar RAW_VALUE = 0x00;\n\n\n// The Things Network\nfunction Decoder(bytes, port) {\n    return milesightDeviceDecode(bytes);\n}\n/* eslint-enable */\n\nfunction milesightDeviceDecode(bytes) {\n    var decoded = {};\n\n    for (var i = 0; i < bytes.length; ) {\n        var channel_id = bytes[i++];\n        var channel_type = bytes[i++];\n\n        // IPSO VERSION\n        if (channel_id === 0xff && channel_type === 0x01) {\n            decoded.ipso_version = readProtocolVersion(bytes[i]);\n            i += 1;\n        }\n        // HARDWARE VERSION\n        else if (channel_id === 0xff && channel_type === 0x09) {\n            decoded.hardware_version = readHardwareVersion(bytes.slice(i, i + 2));\n            i += 2;\n        }\n        // FIRMWARE VERSION\n        else if (channel_id === 0xff && channel_type === 0x0a) {\n            decoded.firmware_version = readFirmwareVersion(bytes.slice(i, i + 2));\n            i += 2;\n        }\n        // TSL VERSION\n        else if (channel_id === 0xff && channel_type === 0xff) {\n            decoded.tsl_version = readTslVersion(bytes.slice(i, i + 2));\n            i += 2;\n        }\n        // SERIAL NUMBER\n        else if (channel_id === 0xff && channel_type === 0x16) {\n            decoded.sn = readSerialNumber(bytes.slice(i, i + 8));\n            i += 8;\n        }\n        // LORAWAN CLASS TYPE\n        else if (channel_id === 0xff && channel_type === 0x0f) {\n            decoded.lorawan_class = readLoRaWANClass(bytes[i]);\n            i += 1;\n        }\n        // RESET EVENT\n        else if (channel_id === 0xff && channel_type === 0xfe) {\n            decoded.reset_event = readResetEvent(1);\n            i += 1;\n        }\n        // DEVICE STATUS\n        else if (channel_id === 0xff && channel_type === 0x0b) {\n            decoded.device_status = readDeviceStatus(1);\n            i += 1;\n        }\n        // VOLTAGE\n        else if (channel_id === 0x03 && channel_type === 0x74) {\n            decoded.voltage = readUInt16LE(bytes.slice(i, i + 2)) / 10;\n            i += 2;\n        }\n        // ACTIVE POWER\n        else if (channel_id === 0x04 && channel_type === 0x80) {\n            decoded.active_power = readUInt32LE(bytes.slice(i, i + 4));\n            i += 4;\n        }\n        // POWER FACTOR\n        else if (channel_id === 0x05 && channel_type === 0x81) {\n            decoded.power_factor = readUInt8(bytes[i]);\n            i += 1;\n        }\n        // POWER CONSUMPTION\n        else if (channel_id === 0x06 && channel_type == 0x83) {\n            decoded.power_consumption = readUInt32LE(bytes.slice(i, i + 4));\n            i += 4;\n        }\n        // CURRENT\n        else if (channel_id === 0x07 && channel_type == 0xc9) {\n            decoded.current = readUInt16LE(bytes.slice(i, i + 2));\n            i += 2;\n        }\n        // STATE\n        else if (channel_id === 0x08 && channel_type == 0x70) {\n            decoded.socket_status = readSocketStatus(bytes[i]);\n            i += 1;\n        }\n        // TEMPERATURE (@since v1.9)\n        else if (channel_id === 0x09 && channel_type === 0x67) {\n            var temperature_value = readUInt16LE(bytes.slice(i, i + 2));\n            if (temperature_value === 0xfffd) {\n                decoded.temperature_sensor_status = readSensorStatus(1);\n            } else if (temperature_value === 0xffff) {\n                decoded.temperature_sensor_status = readSensorStatus(2);\n            } else {\n                decoded.temperature = readInt16LE(bytes.slice(i, i + 2)) / 10;\n            }\n            i += 2;\n        }\n        // TEMPERATURE THRESHOLD ALARM (@since v2.1)\n        else if (channel_id === 0x89 && channel_type === 0x67) {\n            decoded.temperature = readInt16LE(bytes.slice(i, i + 2)) / 10;\n            decoded.temperature_alarm = readTemperatureAlarm(bytes[i + 2]);\n            i += 3;\n        }\n        // TEMPERATURE MUTATION ALARM (@since v1.9 @deprecated v2.1)\n        else if (channel_id === 0x99 && channel_type === 0x67) {\n            decoded.temperature = readInt16LE(bytes.slice(i, i + 2)) / 10;\n            decoded.temperature_mutation = readInt16LE(bytes.slice(i + 2, i + 4)) / 10;\n            decoded.temperature_alarm = readTemperatureAlarm(3);\n            i += 5;\n        }\n        // DOWNLINK RESPONSE\n        else if (channel_id === 0xfe || channel_id === 0xff) {\n            var result = handle_downlink_response(channel_type, bytes, i);\n            decoded = Object.assign(decoded, result.data);\n            i = result.offset;\n        } else {\n            break;\n        }\n    }\n    return decoded;\n}\n\nfunction handle_downlink_response(channel_type, bytes, offset) {\n    var decoded = {};\n\n    switch (channel_type) {\n        case 0x03:\n            decoded.report_interval = readUInt16LE(bytes.slice(offset, offset + 2));\n            offset += 2;\n            break;\n        case 0x06:\n            var data = readUInt8(bytes[offset]);\n            decoded.temperature_alarm_config = {};\n            decoded.temperature_alarm_config.condition = readConditionType(data & 0x07);\n            decoded.temperature_alarm_config.threshold_min = readInt16LE(bytes.slice(offset + 1, offset + 3)) / 10;\n            decoded.temperature_alarm_config.threshold_max = readInt16LE(bytes.slice(offset + 3, offset + 5)) / 10;\n            decoded.temperature_alarm_config.alarm_interval = readUInt16LE(bytes.slice(offset + 5, offset + 7));\n            decoded.temperature_alarm_config.alarm_times = readUInt16LE(bytes.slice(offset + 7, offset + 9));\n            offset += 9;\n            break;\n        case 0x10:\n            decoded.reboot = readYesNoStatus(1);\n            offset += 1;\n            break;\n        case 0x22:\n            decoded.delay_task = {};\n            decoded.delay_task.frame_count = readUInt8(bytes[offset]);\n            decoded.delay_task.delay_time = readUInt16LE(bytes.slice(offset + 1, offset + 3));\n            var data = readUInt8(bytes[offset + 3]);\n            var switch_bit_offset = { socket_status: 0 };\n            for (var key in switch_bit_offset) {\n                if ((data >>> (switch_bit_offset[key] + 4)) & 0x01) {\n                    decoded.delay_task[key] = readSocketStatus((data >> switch_bit_offset[key]) & 0x01);\n                }\n            }\n            offset += 4;\n            break;\n        case 0x23:\n            decoded.cancel_delay_task = readUInt8(bytes[offset]);\n            offset += 2;\n            break;\n        case 0x24:\n            decoded.current_alarm_config = {};\n            decoded.current_alarm_config.enable = readEnableStatus(bytes[offset]);\n            decoded.current_alarm_config.threshold = readUInt8(bytes[offset + 1]);\n            offset += 2;\n            break;\n        case 0x25:\n            var data = readUInt16LE(bytes.slice(offset, offset + 2));\n            decoded.child_lock_config = {};\n            decoded.child_lock_config.enable = readEnableStatus((data >>> 15) & 0x01);\n            decoded.child_lock_config.lock_time = data & 0x7fff;\n            offset += 2;\n            break;\n        case 0x26:\n            decoded.power_consumption_enable = readEnableStatus(bytes[offset]);\n            offset += 1;\n            break;\n        case 0x27:\n            decoded.reset_power_consumption = readYesNoStatus(1);\n            offset += 1;\n            break;\n        case 0x28:\n            decoded.report_status = readYesNoStatus(1);\n            offset += 1;\n            break;\n        case 0x2f:\n            decoded.led_indicator_enable = readEnableStatus(readUInt16LE(bytes.slice(offset, offset + 2)));\n            offset += 2;\n            break;\n        case 0x30:\n            decoded.over_current_protection = {};\n            decoded.over_current_protection.enable = readEnableStatus(bytes[offset]);\n            decoded.over_current_protection.trip_current = readUInt8(bytes[offset + 1]);\n            offset += 2;\n            break;\n        case 0x34:\n            // skip first byte\n            decoded.d2d_command = readD2DCommand(bytes.slice(offset + 1, offset + 3));\n            offset += 3;\n            break;\n        case 0x8d:\n            decoded.overload_current_protection = {};\n            decoded.overload_current_protection.enable = readEnableStatus(bytes[offset]);\n            offset += 1;\n            break;\n        case 0xa5:\n            decoded.led_indicator_reserve = readEnableStatus(bytes[offset]);\n            offset += 1;\n            break;\n        case 0xab:\n            decoded.temperature_calibration_settings = {};\n            decoded.temperature_calibration_settings.enable = readEnableStatus(bytes[offset]);\n            decoded.temperature_calibration_settings.calibration_value = readInt16LE(bytes.slice(offset + 1, offset + 3)) / 10;\n            offset += 3;\n            break;\n        default:\n            throw new Error(\"unknown downlink response\");\n    }\n\n    return { data: decoded, offset: offset };\n}\n\nfunction readProtocolVersion(bytes) {\n    var major = (bytes & 0xf0) >> 4;\n    var minor = bytes & 0x0f;\n    return \"v\" + major + \".\" + minor;\n}\n\nfunction readHardwareVersion(bytes) {\n    var major = (bytes[0] & 0xff).toString(16);\n    var minor = (bytes[1] & 0xff) >> 4;\n    return \"v\" + major + \".\" + minor;\n}\n\nfunction readFirmwareVersion(bytes) {\n    var major = (bytes[0] & 0xff).toString(16);\n    var minor = (bytes[1] & 0xff).toString(16);\n    return \"v\" + major + \".\" + minor;\n}\n\nfunction readTslVersion(bytes) {\n    var major = bytes[0] & 0xff;\n    var minor = bytes[1] & 0xff;\n    return \"v\" + major + \".\" + minor;\n}\n\nfunction readSerialNumber(bytes) {\n    var temp = [];\n    for (var idx = 0; idx < bytes.length; idx++) {\n        temp.push((\"0\" + (bytes[idx] & 0xff).toString(16)).slice(-2));\n    }\n    return temp.join(\"\");\n}\n\nfunction readLoRaWANClass(type) {\n    var class_map = {\n        0: \"Class A\",\n        1: \"Class B\",\n        2: \"Class C\",\n        3: \"Class CtoB\",\n    };\n    return getValue(class_map, type);\n}\n\nfunction readResetEvent(status) {\n    var status_map = { 0: \"normal\", 1: \"reset\" };\n    return getValue(status_map, status);\n}\n\nfunction readDeviceStatus(status) {\n    var status_map = { 0: \"off\", 1: \"on\" };\n    return getValue(status_map, status);\n}\n\nfunction readSocketStatus(status) {\n    var status_map = { 0: \"off\", 1: \"on\" };\n    return getValue(status_map, status);\n}\n\nfunction readEnableStatus(status) {\n    var status_map = { 0: \"disable\", 1: \"enable\" };\n    return getValue(status_map, status);\n}\n\nfunction readYesNoStatus(status) {\n    var status_map = { 0: \"no\", 1: \"yes\" };\n    return getValue(status_map, status);\n}\n\nfunction readSensorStatus(type) {\n    var status_map = {\n        0: \"normal\",\n        1: \"over range alarm\",\n        2: \"read failed\",\n    };\n    return getValue(status_map, type);\n}\n\nfunction readTemperatureAlarm(type) {\n    var status_map = {\n        0: \"threshold alarm release\",\n        1: \"threshold alarm\",\n        2: \"overheat alarm\",\n        3: \"mutation alarm\",\n    };\n    return getValue(status_map, type);\n}\n\nfunction readConditionType(type) {\n    var condition_map = { 0: \"disable\", 1: \"below\", 2: \"above\", 3: \"between\", 4: \"outside\" };\n    return getValue(condition_map, type);\n}\n\nfunction readD2DCommand(bytes) {\n    return (\"0\" + (bytes[1] & 0xff).toString(16)).slice(-2) + (\"0\" + (bytes[0] & 0xff).toString(16)).slice(-2);\n}\n\n/* eslint-disable */\nfunction readUInt8(bytes) {\n    return bytes & 0xff;\n}\n\nfunction readInt8(bytes) {\n    var ref = readUInt8(bytes);\n    return ref > 0x7f ? ref - 0x100 : ref;\n}\n\nfunction readUInt16LE(bytes) {\n    var value = (bytes[1] << 8) + bytes[0];\n    return value & 0xffff;\n}\n\nfunction readInt16LE(bytes) {\n    var ref = readUInt16LE(bytes);\n    return ref > 0x7fff ? ref - 0x10000 : ref;\n}\n\nfunction readUInt32LE(bytes) {\n    var value = (bytes[3] << 24) + (bytes[2] << 16) + (bytes[1] << 8) + bytes[0];\n    return (value & 0xffffffff) >>> 0;\n}\n\nfunction getValue(map, key) {\n    if (RAW_VALUE) return key;\n\n    var value = map[key];\n    if (!value) value = \"unknown\";\n    return value;\n}\n\nif (!Object.assign) {\n    Object.defineProperty(Object, \"assign\", {\n        enumerable: false,\n        configurable: true,\n        writable: true,\n        value: function (target) {\n            \"use strict\";\n            if (target == null) {\n                throw new TypeError(\"Cannot convert first argument to object\");\n            }\n\n            var to = Object(target);\n            for (var i = 1; i < arguments.length; i++) {\n                var nextSource = arguments[i];\n                if (nextSource == null) {\n                    continue;\n                }\n                nextSource = Object(nextSource);\n\n                var keysArray = Object.keys(Object(nextSource));\n                for (var nextIndex = 0, len = keysArray.length; nextIndex < len; nextIndex++) {\n                    var nextKey = keysArray[nextIndex];\n                    var desc = Object.getOwnPropertyDescriptor(nextSource, nextKey);\n                    if (desc !== undefined && desc.enumerable) {\n                        // concat array\n                        if (Array.isArray(to[nextKey]) && Array.isArray(nextSource[nextKey])) {\n                            to[nextKey] = to[nextKey].concat(nextSource[nextKey]);\n                        } else {\n                            to[nextKey] = nextSource[nextKey];\n                        }\n                    }\n                }\n            }\n            return to;\n        },\n    });\n}",
-            "environment": "javascript",
-            "storage": "",
-            "version": "1.0"
-          },
-          "flows": {
-            "milesight_ws515_decoder": {
-              "data": {
-                "payload": "{{payload}}",
-                "payload_function": "decodeThingerUplink",
-                "payload_type": "source_payload",
-                "resource": "uplink",
-                "source": "resource",
-                "update": "events"
-              },
-              "enabled": true,
-              "sink": {
-                "payload": "{{payload}}",
-                "payload_function": "",
-                "payload_type": "source_payload",
-                "resource_stream": "uplink_decoded",
-                "target": "resource_stream"
-              },
-              "split_data": false
-            }
-          },
-          "properties": {
-            "uplink": {
-              "data": {
-                "payload": "{{payload}}",
-                "payload_function": "",
-                "payload_type": "source_payload",
-                "resource": "uplink",
-                "source": "resource",
-                "update": "events"
-              },
-              "default": {
-                "source": "value"
-              },
-              "enabled": true
-            }
-          }
-        },
-        "_resources": {
-          "properties": [
+        "description": "WS51x is an 86-type in-wall smart socket panel withastylishandminimalist design that combines power control andelectricityconsumption statistics features.",
+        "image": "assets/ws515.png",
+        "category": "devices",
+        "vendor": "milesight-iot"
+    },
+    "resources": {
+        "products": [
             {
-              "property": "dashboard",
-              "value": {
-                "tabs": [
-                  {
-                    "name": "Overview",
-                    "widgets": [
-                      {
-                        "layout": {
-                          "col": 0,
-                          "row": 0,
-                          "sizeX": 2,
-                          "sizeY": 4
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "Socket Status"
-                        },
-                        "properties": {
-                          "decimalPlaces": 0,
-                          "textAlign": "center",
-                          "textColor": "#1E313E",
-                          "textColorConditions": [
-                            {
-                              "color": "#2ebd59",
-                              "condition": "==",
-                              "value": "on"
+                "config": {
+                    "icons": []
+                },
+                "description": "WS51x is an 86-type in-wall smart socket panel withastylishandminimalist design that combines power control andelectricityconsumption statistics features.",
+                "enabled": true,
+                "name": "Milesight-Iot WS515",
+                "product": "milesight_iot_ws515",
+                "profile": {
+                    "api": {
+                        "downlink": {
+                            "enabled": true,
+                            "handle_connectivity": false,
+                            "request": {
+                                "data": {
+                                    "path": "/downlink",
+                                    "payload": "{\r\n    \"data\"    : \"{{payload.data=\"\"}}\",\r\n    \"port\"    :  {{payload.port=2}},\r\n    \"priority\":  {{payload.priority=3}},\r\n    \"confirmed\" :  {{payload.confirmed=false}},\r\n    \"uplink\"  :  {{property.uplink}} \r\n}",
+                                    "payload_function": "",
+                                    "payload_type": "",
+                                    "plugin": "{{property.uplink.source}}",
+                                    "target": "plugin_endpoint"
+                                }
                             },
-                            {
-                              "color": "#d1311f",
-                              "condition": "==",
-                              "value": "off"
+                            "response": {
+                                "data": {}
                             }
-                          ],
-                          "textSize": "50px",
-                          "textWeight": "font-light",
-                          "unit": "",
-                          "unitSize": "20px"
                         },
-                        "sources": [
-                          {
-                            "bucket": {
-                              "backend": "mongodb",
-                              "id": "milesight_ws515_data",
-                              "mapping": "socket_status",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
+                        "uplink": {
+                            "enabled": true,
+                            "handle_connectivity": true,
+                            "request": {
+                                "data": {
+                                    "payload": "{{payload}}",
+                                    "payload_function": "",
+                                    "payload_type": "source_payload",
+                                    "resource_stream": "uplink",
+                                    "target": "resource_stream"
+                                }
                             },
-                            "color": "#1abc9c",
-                            "name": "Status",
-                            "source": "bucket",
-                            "timespan": {
-                              "mode": "latest"
+                            "response": {
+                                "data": {}
                             }
-                          }
-                        ],
-                        "type": "text"
-                      },
-                      {
-                        "layout": {
-                          "col": 2,
-                          "row": 0,
-                          "sizeX": 2,
-                          "sizeY": 4
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "Voltage"
-                        },
-                        "properties": {
-                          "decimalPlaces": 1,
-                          "textAlign": "center",
-                          "textColor": "#1E313E",
-                          "textSize": "50px",
-                          "textWeight": "font-light",
-                          "unit": "V",
-                          "unitSize": "20px"
-                        },
-                        "sources": [
-                          {
-                            "bucket": {
-                              "backend": "mongodb",
-                              "id": "milesight_ws515_data",
-                              "mapping": "voltage",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
+                        }
+                    },
+                    "autoprovisions": {
+                        "device_autoprovisioning": {
+                            "config": {
+                                "mode": "pattern",
+                                "pattern": "ws51._.*"
                             },
-                            "color": "#f39c12",
-                            "name": "Voltage",
-                            "source": "bucket",
-                            "timespan": {
-                              "mode": "latest"
-                            }
-                          }
-                        ],
-                        "type": "text"
-                      },
-                      {
-                        "layout": {
-                          "col": 4,
-                          "row": 0,
-                          "sizeX": 2,
-                          "sizeY": 4
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "Current"
-                        },
-                        "properties": {
-                          "decimalPlaces": 0,
-                          "textAlign": "center",
-                          "textColor": "#1E313E",
-                          "textSize": "50px",
-                          "textWeight": "font-light",
-                          "unit": "mA",
-                          "unitSize": "20px"
-                        },
-                        "sources": [
-                          {
-                            "bucket": {
-                              "backend": "mongodb",
-                              "id": "milesight_ws515_data",
-                              "mapping": "current",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
+                            "enabled": true
+                        }
+                    },
+                    "buckets": {
+                        "milesight_ws515_data": {
+                            "backend": "mongodb",
+                            "data": {
+                                "payload": "{{payload}}",
+                                "payload_function": "",
+                                "payload_type": "source_payload",
+                                "resource_stream": "uplink_decoded",
+                                "source": "resource_stream"
                             },
-                            "color": "#e74c3c",
-                            "name": "Current",
-                            "source": "bucket",
-                            "timespan": {
-                              "mode": "latest"
-                            }
-                          }
-                        ],
-                        "type": "text"
-                      },
-                      {
-                        "layout": {
-                          "col": 0,
-                          "row": 4,
-                          "sizeX": 2,
-                          "sizeY": 4
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "Active Power"
-                        },
-                        "properties": {
-                          "decimalPlaces": 0,
-                          "textAlign": "center",
-                          "textColor": "#1E313E",
-                          "textSize": "50px",
-                          "textWeight": "font-light",
-                          "unit": "W",
-                          "unitSize": "20px"
-                        },
-                        "sources": [
-                          {
-                            "bucket": {
-                              "backend": "mongodb",
-                              "id": "milesight_ws515_data",
-                              "mapping": "active_power",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
+                            "enabled": true,
+                            "retention": {
+                                "period": 3,
+                                "unit": "months"
                             },
-                            "color": "#9b59b6",
-                            "name": "Power",
-                            "source": "bucket",
-                            "timespan": {
-                              "mode": "latest"
-                            }
-                          }
-                        ],
-                        "type": "text"
-                      },
-                      {
-                        "layout": {
-                          "col": 2,
-                          "row": 4,
-                          "sizeX": 2,
-                          "sizeY": 4
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "Power Factor"
-                        },
-                        "properties": {
-                          "decimalPlaces": 0,
-                          "textAlign": "center",
-                          "textColor": "#1E313E",
-                          "textSize": "50px",
-                          "textWeight": "font-light",
-                          "unit": "%",
-                          "unitSize": "20px"
-                        },
-                        "sources": [
-                          {
-                            "bucket": {
-                              "backend": "mongodb",
-                              "id": "milesight_ws515_data",
-                              "mapping": "power_factor",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
+                            "tags": []
+                        }
+                    },
+                    "code": {
+                        "code": "function decodeThingerUplink(thingerData) {\n    // 0. If data has already been decoded, we will return it\n    if (thingerData.decodedPayload) return thingerData.decodedPayload;\n    \n    // 1. Extract and Validate Input\n    // We need 'payload' (hex string) and 'fPort' (integer)\n    const hexPayload = thingerData.payload || \"\";\n    const port = thingerData.fPort || 1;\n\n    // 2. Convert Hex String to Byte Array\n    const bytes = [];\n    for (let i = 0; i < hexPayload.length; i += 2) {\n        bytes.push(parseInt(hexPayload.substr(i, 2), 16));\n    }\n\n    // 3. Dynamic Function Detection and Execution\n    \n    // CASE A: (The Things Stack v3)\n    if (typeof decodeUplink === 'function') {\n        try {\n            const input = {\n                bytes: bytes,\n                fPort: port\n            };\n            var result = decodeUplink(input);\n            \n            if (result.data) return result.data;\n\n            return result; \n        } catch (e) {\n            console.error(\"Error inside decodeUplink:\", e);\n            throw e;\n        }\n    }\n\n    // CASE B: Legacy TTN (v2)\n    else if (typeof Decoder === 'function') {\n        try {\n            return Decoder(bytes, port);\n        } catch (e) {\n            console.error(\"Error inside Decoder:\", e);\n            throw e;\n        }\n    }\n\n    // CASE C: No decoder found\n    else {\n        throw new Error(\"No compatible TTN decoder function (decodeUplink or Decoder) found in scope.\");\n    }\n}\n\n\n// TTN decoder\nfunction decodeUplink(input) {\n    var res = Decoder(input.bytes, input.fPort);\n    if (res.error) {\n        return {\n            errors: [res.error],\n        };\n    }\n    return {\n        data: res,\n    };\n}\n/**\n * Payload Encoder\n *\n * Copyright 2025 Milesight IoT\n *\n * @product WS51x\n */\nvar RAW_VALUE = 0x00;\n\n\n// The Things Network\nfunction Decoder(bytes, port) {\n    return milesightDeviceDecode(bytes);\n}\n/* eslint-enable */\n\nfunction milesightDeviceDecode(bytes) {\n    var decoded = {};\n\n    for (var i = 0; i < bytes.length; ) {\n        var channel_id = bytes[i++];\n        var channel_type = bytes[i++];\n\n        // IPSO VERSION\n        if (channel_id === 0xff && channel_type === 0x01) {\n            decoded.ipso_version = readProtocolVersion(bytes[i]);\n            i += 1;\n        }\n        // HARDWARE VERSION\n        else if (channel_id === 0xff && channel_type === 0x09) {\n            decoded.hardware_version = readHardwareVersion(bytes.slice(i, i + 2));\n            i += 2;\n        }\n        // FIRMWARE VERSION\n        else if (channel_id === 0xff && channel_type === 0x0a) {\n            decoded.firmware_version = readFirmwareVersion(bytes.slice(i, i + 2));\n            i += 2;\n        }\n        // TSL VERSION\n        else if (channel_id === 0xff && channel_type === 0xff) {\n            decoded.tsl_version = readTslVersion(bytes.slice(i, i + 2));\n            i += 2;\n        }\n        // SERIAL NUMBER\n        else if (channel_id === 0xff && channel_type === 0x16) {\n            decoded.sn = readSerialNumber(bytes.slice(i, i + 8));\n            i += 8;\n        }\n        // LORAWAN CLASS TYPE\n        else if (channel_id === 0xff && channel_type === 0x0f) {\n            decoded.lorawan_class = readLoRaWANClass(bytes[i]);\n            i += 1;\n        }\n        // RESET EVENT\n        else if (channel_id === 0xff && channel_type === 0xfe) {\n            decoded.reset_event = readResetEvent(1);\n            i += 1;\n        }\n        // DEVICE STATUS\n        else if (channel_id === 0xff && channel_type === 0x0b) {\n            decoded.device_status = readDeviceStatus(1);\n            i += 1;\n        }\n        // VOLTAGE\n        else if (channel_id === 0x03 && channel_type === 0x74) {\n            decoded.voltage = readUInt16LE(bytes.slice(i, i + 2)) / 10;\n            i += 2;\n        }\n        // ACTIVE POWER\n        else if (channel_id === 0x04 && channel_type === 0x80) {\n            decoded.active_power = readUInt32LE(bytes.slice(i, i + 4));\n            i += 4;\n        }\n        // POWER FACTOR\n        else if (channel_id === 0x05 && channel_type === 0x81) {\n            decoded.power_factor = readUInt8(bytes[i]);\n            i += 1;\n        }\n        // POWER CONSUMPTION\n        else if (channel_id === 0x06 && channel_type == 0x83) {\n            decoded.power_consumption = readUInt32LE(bytes.slice(i, i + 4));\n            i += 4;\n        }\n        // CURRENT\n        else if (channel_id === 0x07 && channel_type == 0xc9) {\n            decoded.current = readUInt16LE(bytes.slice(i, i + 2));\n            i += 2;\n        }\n        // STATE\n        else if (channel_id === 0x08 && channel_type == 0x70) {\n            decoded.socket_status = readSocketStatus(bytes[i]);\n            i += 1;\n        }\n        // TEMPERATURE (@since v1.9)\n        else if (channel_id === 0x09 && channel_type === 0x67) {\n            var temperature_value = readUInt16LE(bytes.slice(i, i + 2));\n            if (temperature_value === 0xfffd) {\n                decoded.temperature_sensor_status = readSensorStatus(1);\n            } else if (temperature_value === 0xffff) {\n                decoded.temperature_sensor_status = readSensorStatus(2);\n            } else {\n                decoded.temperature = readInt16LE(bytes.slice(i, i + 2)) / 10;\n            }\n            i += 2;\n        }\n        // TEMPERATURE THRESHOLD ALARM (@since v2.1)\n        else if (channel_id === 0x89 && channel_type === 0x67) {\n            decoded.temperature = readInt16LE(bytes.slice(i, i + 2)) / 10;\n            decoded.temperature_alarm = readTemperatureAlarm(bytes[i + 2]);\n            i += 3;\n        }\n        // TEMPERATURE MUTATION ALARM (@since v1.9 @deprecated v2.1)\n        else if (channel_id === 0x99 && channel_type === 0x67) {\n            decoded.temperature = readInt16LE(bytes.slice(i, i + 2)) / 10;\n            decoded.temperature_mutation = readInt16LE(bytes.slice(i + 2, i + 4)) / 10;\n            decoded.temperature_alarm = readTemperatureAlarm(3);\n            i += 5;\n        }\n        // DOWNLINK RESPONSE\n        else if (channel_id === 0xfe || channel_id === 0xff) {\n            var result = handle_downlink_response(channel_type, bytes, i);\n            decoded = Object.assign(decoded, result.data);\n            i = result.offset;\n        } else {\n            break;\n        }\n    }\n    return decoded;\n}\n\nfunction handle_downlink_response(channel_type, bytes, offset) {\n    var decoded = {};\n\n    switch (channel_type) {\n        case 0x03:\n            decoded.report_interval = readUInt16LE(bytes.slice(offset, offset + 2));\n            offset += 2;\n            break;\n        case 0x06:\n            var data = readUInt8(bytes[offset]);\n            decoded.temperature_alarm_config = {};\n            decoded.temperature_alarm_config.condition = readConditionType(data & 0x07);\n            decoded.temperature_alarm_config.threshold_min = readInt16LE(bytes.slice(offset + 1, offset + 3)) / 10;\n            decoded.temperature_alarm_config.threshold_max = readInt16LE(bytes.slice(offset + 3, offset + 5)) / 10;\n            decoded.temperature_alarm_config.alarm_interval = readUInt16LE(bytes.slice(offset + 5, offset + 7));\n            decoded.temperature_alarm_config.alarm_times = readUInt16LE(bytes.slice(offset + 7, offset + 9));\n            offset += 9;\n            break;\n        case 0x10:\n            decoded.reboot = readYesNoStatus(1);\n            offset += 1;\n            break;\n        case 0x22:\n            decoded.delay_task = {};\n            decoded.delay_task.frame_count = readUInt8(bytes[offset]);\n            decoded.delay_task.delay_time = readUInt16LE(bytes.slice(offset + 1, offset + 3));\n            var data = readUInt8(bytes[offset + 3]);\n            var switch_bit_offset = { socket_status: 0 };\n            for (var key in switch_bit_offset) {\n                if ((data >>> (switch_bit_offset[key] + 4)) & 0x01) {\n                    decoded.delay_task[key] = readSocketStatus((data >> switch_bit_offset[key]) & 0x01);\n                }\n            }\n            offset += 4;\n            break;\n        case 0x23:\n            decoded.cancel_delay_task = readUInt8(bytes[offset]);\n            offset += 2;\n            break;\n        case 0x24:\n            decoded.current_alarm_config = {};\n            decoded.current_alarm_config.enable = readEnableStatus(bytes[offset]);\n            decoded.current_alarm_config.threshold = readUInt8(bytes[offset + 1]);\n            offset += 2;\n            break;\n        case 0x25:\n            var data = readUInt16LE(bytes.slice(offset, offset + 2));\n            decoded.child_lock_config = {};\n            decoded.child_lock_config.enable = readEnableStatus((data >>> 15) & 0x01);\n            decoded.child_lock_config.lock_time = data & 0x7fff;\n            offset += 2;\n            break;\n        case 0x26:\n            decoded.power_consumption_enable = readEnableStatus(bytes[offset]);\n            offset += 1;\n            break;\n        case 0x27:\n            decoded.reset_power_consumption = readYesNoStatus(1);\n            offset += 1;\n            break;\n        case 0x28:\n            decoded.report_status = readYesNoStatus(1);\n            offset += 1;\n            break;\n        case 0x2f:\n            decoded.led_indicator_enable = readEnableStatus(readUInt16LE(bytes.slice(offset, offset + 2)));\n            offset += 2;\n            break;\n        case 0x30:\n            decoded.over_current_protection = {};\n            decoded.over_current_protection.enable = readEnableStatus(bytes[offset]);\n            decoded.over_current_protection.trip_current = readUInt8(bytes[offset + 1]);\n            offset += 2;\n            break;\n        case 0x34:\n            // skip first byte\n            decoded.d2d_command = readD2DCommand(bytes.slice(offset + 1, offset + 3));\n            offset += 3;\n            break;\n        case 0x8d:\n            decoded.overload_current_protection = {};\n            decoded.overload_current_protection.enable = readEnableStatus(bytes[offset]);\n            offset += 1;\n            break;\n        case 0xa5:\n            decoded.led_indicator_reserve = readEnableStatus(bytes[offset]);\n            offset += 1;\n            break;\n        case 0xab:\n            decoded.temperature_calibration_settings = {};\n            decoded.temperature_calibration_settings.enable = readEnableStatus(bytes[offset]);\n            decoded.temperature_calibration_settings.calibration_value = readInt16LE(bytes.slice(offset + 1, offset + 3)) / 10;\n            offset += 3;\n            break;\n        default:\n            throw new Error(\"unknown downlink response\");\n    }\n\n    return { data: decoded, offset: offset };\n}\n\nfunction readProtocolVersion(bytes) {\n    var major = (bytes & 0xf0) >> 4;\n    var minor = bytes & 0x0f;\n    return \"v\" + major + \".\" + minor;\n}\n\nfunction readHardwareVersion(bytes) {\n    var major = (bytes[0] & 0xff).toString(16);\n    var minor = (bytes[1] & 0xff) >> 4;\n    return \"v\" + major + \".\" + minor;\n}\n\nfunction readFirmwareVersion(bytes) {\n    var major = (bytes[0] & 0xff).toString(16);\n    var minor = (bytes[1] & 0xff).toString(16);\n    return \"v\" + major + \".\" + minor;\n}\n\nfunction readTslVersion(bytes) {\n    var major = bytes[0] & 0xff;\n    var minor = bytes[1] & 0xff;\n    return \"v\" + major + \".\" + minor;\n}\n\nfunction readSerialNumber(bytes) {\n    var temp = [];\n    for (var idx = 0; idx < bytes.length; idx++) {\n        temp.push((\"0\" + (bytes[idx] & 0xff).toString(16)).slice(-2));\n    }\n    return temp.join(\"\");\n}\n\nfunction readLoRaWANClass(type) {\n    var class_map = {\n        0: \"Class A\",\n        1: \"Class B\",\n        2: \"Class C\",\n        3: \"Class CtoB\",\n    };\n    return getValue(class_map, type);\n}\n\nfunction readResetEvent(status) {\n    var status_map = { 0: \"normal\", 1: \"reset\" };\n    return getValue(status_map, status);\n}\n\nfunction readDeviceStatus(status) {\n    var status_map = { 0: \"off\", 1: \"on\" };\n    return getValue(status_map, status);\n}\n\nfunction readSocketStatus(status) {\n    var status_map = { 0: \"off\", 1: \"on\" };\n    return getValue(status_map, status);\n}\n\nfunction readEnableStatus(status) {\n    var status_map = { 0: \"disable\", 1: \"enable\" };\n    return getValue(status_map, status);\n}\n\nfunction readYesNoStatus(status) {\n    var status_map = { 0: \"no\", 1: \"yes\" };\n    return getValue(status_map, status);\n}\n\nfunction readSensorStatus(type) {\n    var status_map = {\n        0: \"normal\",\n        1: \"over range alarm\",\n        2: \"read failed\",\n    };\n    return getValue(status_map, type);\n}\n\nfunction readTemperatureAlarm(type) {\n    var status_map = {\n        0: \"threshold alarm release\",\n        1: \"threshold alarm\",\n        2: \"overheat alarm\",\n        3: \"mutation alarm\",\n    };\n    return getValue(status_map, type);\n}\n\nfunction readConditionType(type) {\n    var condition_map = { 0: \"disable\", 1: \"below\", 2: \"above\", 3: \"between\", 4: \"outside\" };\n    return getValue(condition_map, type);\n}\n\nfunction readD2DCommand(bytes) {\n    return (\"0\" + (bytes[1] & 0xff).toString(16)).slice(-2) + (\"0\" + (bytes[0] & 0xff).toString(16)).slice(-2);\n}\n\n/* eslint-disable */\nfunction readUInt8(bytes) {\n    return bytes & 0xff;\n}\n\nfunction readInt8(bytes) {\n    var ref = readUInt8(bytes);\n    return ref > 0x7f ? ref - 0x100 : ref;\n}\n\nfunction readUInt16LE(bytes) {\n    var value = (bytes[1] << 8) + bytes[0];\n    return value & 0xffff;\n}\n\nfunction readInt16LE(bytes) {\n    var ref = readUInt16LE(bytes);\n    return ref > 0x7fff ? ref - 0x10000 : ref;\n}\n\nfunction readUInt32LE(bytes) {\n    var value = (bytes[3] << 24) + (bytes[2] << 16) + (bytes[1] << 8) + bytes[0];\n    return (value & 0xffffffff) >>> 0;\n}\n\nfunction getValue(map, key) {\n    if (RAW_VALUE) return key;\n\n    var value = map[key];\n    if (!value) value = \"unknown\";\n    return value;\n}\n\nif (!Object.assign) {\n    Object.defineProperty(Object, \"assign\", {\n        enumerable: false,\n        configurable: true,\n        writable: true,\n        value: function (target) {\n            \"use strict\";\n            if (target == null) {\n                throw new TypeError(\"Cannot convert first argument to object\");\n            }\n\n            var to = Object(target);\n            for (var i = 1; i < arguments.length; i++) {\n                var nextSource = arguments[i];\n                if (nextSource == null) {\n                    continue;\n                }\n                nextSource = Object(nextSource);\n\n                var keysArray = Object.keys(Object(nextSource));\n                for (var nextIndex = 0, len = keysArray.length; nextIndex < len; nextIndex++) {\n                    var nextKey = keysArray[nextIndex];\n                    var desc = Object.getOwnPropertyDescriptor(nextSource, nextKey);\n                    if (desc !== undefined && desc.enumerable) {\n                        // concat array\n                        if (Array.isArray(to[nextKey]) && Array.isArray(nextSource[nextKey])) {\n                            to[nextKey] = to[nextKey].concat(nextSource[nextKey]);\n                        } else {\n                            to[nextKey] = nextSource[nextKey];\n                        }\n                    }\n                }\n            }\n            return to;\n        },\n    });\n}",
+                        "environment": "javascript",
+                        "storage": "",
+                        "version": "1.0"
+                    },
+                    "flows": {
+                        "milesight_ws515_decoder": {
+                            "data": {
+                                "payload": "{{payload}}",
+                                "payload_function": "decodeThingerUplink",
+                                "payload_type": "source_payload",
+                                "resource": "uplink",
+                                "source": "resource",
+                                "update": "events"
                             },
-                            "color": "#16a085",
-                            "name": "PF",
-                            "source": "bucket",
-                            "timespan": {
-                              "mode": "latest"
-                            }
-                          }
-                        ],
-                        "type": "text"
-                      },
-                      {
-                        "layout": {
-                          "col": 4,
-                          "row": 4,
-                          "sizeX": 2,
-                          "sizeY": 4
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "Power Consumption"
-                        },
-                        "properties": {
-                          "decimalPlaces": 0,
-                          "textAlign": "center",
-                          "textColor": "#1E313E",
-                          "textSize": "45px",
-                          "textWeight": "font-light",
-                          "unit": "Wh",
-                          "unitSize": "20px"
-                        },
-                        "sources": [
-                          {
-                            "bucket": {
-                              "backend": "mongodb",
-                              "id": "milesight_ws515_data",
-                              "mapping": "power_consumption",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
+                            "enabled": true,
+                            "sink": {
+                                "payload": "{{payload}}",
+                                "payload_function": "",
+                                "payload_type": "source_payload",
+                                "resource_stream": "uplink_decoded",
+                                "target": "resource_stream"
                             },
-                            "color": "#34495e",
-                            "name": "Consumption",
-                            "source": "bucket",
-                            "timespan": {
-                              "mode": "latest"
-                            }
-                          }
-                        ],
-                        "type": "text"
-                      },
-                      {
-                        "layout": {
-                          "col": 0,
-                          "row": 8,
-                          "sizeX": 6,
-                          "sizeY": 10
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "Power & Voltage (24h)"
-                        },
-                        "properties": {
-                          "alignTimeSeries": false,
-                          "dataAppend": false,
-                          "options": "var options = {\n    chart: {\n        type: 'line',\n        stacked: false\n    },\n    dataLabels: {\n        enabled: false\n    },\n    stroke: {\n        curve: 'smooth',\n        width: [3, 3]\n    },\n    xaxis: {\n        type: 'datetime',\n        labels: {\n            datetimeUTC: false\n        },\n        tooltip: {\n            enabled: false\n        }\n    },\n    yaxis: [\n        {\n            title: {\n                text: 'Power (W)'\n            },\n            labels: {\n                formatter: function (val) {\n                    if (val !== null && typeof val !== 'undefined')\n                        return val.toFixed(0);\n                }\n            }\n        },\n        {\n            opposite: true,\n            title: {\n                text: 'Voltage (V)'\n            },\n            labels: {\n                formatter: function (val) {\n                    if (val !== null && typeof val !== 'undefined')\n                        return val.toFixed(1);\n                }\n            }\n        }\n    ],\n    tooltip: {\n        x: {\n            format: 'dd/MM/yyyy HH:mm:ss'\n        }\n    }\n};\n",
-                          "realTimeUpdate": true
-                        },
-                        "sources": [
-                          {
-                            "aggregation": {},
-                            "bucket": {
-                              "backend": "mongodb",
-                              "id": "milesight_ws515_data",
-                              "mapping": "active_power",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
+                            "split_data": false
+                        }
+                    },
+                    "properties": {
+                        "uplink": {
+                            "data": {
+                                "payload": "{{payload}}",
+                                "payload_function": "",
+                                "payload_type": "source_payload",
+                                "resource": "uplink",
+                                "source": "resource",
+                                "update": "events"
                             },
-                            "color": "#9b59b6",
-                            "name": "Active Power",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
-                            }
-                          },
-                          {
-                            "aggregation": {},
-                            "bucket": {
-                              "backend": "mongodb",
-                              "id": "milesight_ws515_data",
-                              "mapping": "voltage",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
+                            "default": {
+                                "source": "value"
                             },
-                            "color": "#f39c12",
-                            "name": "Voltage",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
+                            "enabled": true
+                        }
+                    }
+                },
+                "_resources": {
+                    "properties": [
+                        {
+                            "property": "dashboard",
+                            "value": {
+                                "tabs": [
+                                    {
+                                        "name": "Overview",
+                                        "widgets": [
+                                            {
+                                                "layout": {
+                                                    "col": 0,
+                                                    "row": 0,
+                                                    "sizeX": 2,
+                                                    "sizeY": 4
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "Socket Status"
+                                                },
+                                                "properties": {
+                                                    "decimalPlaces": 0,
+                                                    "textAlign": "center",
+                                                    "textColor": "#1E313E",
+                                                    "textColorConditions": [
+                                                        {
+                                                            "color": "#2ebd59",
+                                                            "condition": "==",
+                                                            "value": "on"
+                                                        },
+                                                        {
+                                                            "color": "#d1311f",
+                                                            "condition": "==",
+                                                            "value": "off"
+                                                        }
+                                                    ],
+                                                    "textSize": "50px",
+                                                    "textWeight": "font-light",
+                                                    "unit": "",
+                                                    "unitSize": "20px"
+                                                },
+                                                "sources": [
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "mongodb",
+                                                            "id": "milesight_ws515_data",
+                                                            "mapping": "socket_status",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#1abc9c",
+                                                        "name": "Status",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "mode": "latest"
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "text"
+                                            },
+                                            {
+                                                "layout": {
+                                                    "col": 2,
+                                                    "row": 0,
+                                                    "sizeX": 2,
+                                                    "sizeY": 4
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "Voltage"
+                                                },
+                                                "properties": {
+                                                    "decimalPlaces": 1,
+                                                    "textAlign": "center",
+                                                    "textColor": "#1E313E",
+                                                    "textSize": "50px",
+                                                    "textWeight": "font-light",
+                                                    "unit": "V",
+                                                    "unitSize": "20px"
+                                                },
+                                                "sources": [
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "mongodb",
+                                                            "id": "milesight_ws515_data",
+                                                            "mapping": "voltage",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#f39c12",
+                                                        "name": "Voltage",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "mode": "latest"
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "text"
+                                            },
+                                            {
+                                                "layout": {
+                                                    "col": 4,
+                                                    "row": 0,
+                                                    "sizeX": 2,
+                                                    "sizeY": 4
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "Current"
+                                                },
+                                                "properties": {
+                                                    "decimalPlaces": 0,
+                                                    "textAlign": "center",
+                                                    "textColor": "#1E313E",
+                                                    "textSize": "50px",
+                                                    "textWeight": "font-light",
+                                                    "unit": "mA",
+                                                    "unitSize": "20px"
+                                                },
+                                                "sources": [
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "mongodb",
+                                                            "id": "milesight_ws515_data",
+                                                            "mapping": "current",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#e74c3c",
+                                                        "name": "Current",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "mode": "latest"
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "text"
+                                            },
+                                            {
+                                                "layout": {
+                                                    "col": 0,
+                                                    "row": 4,
+                                                    "sizeX": 2,
+                                                    "sizeY": 4
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "Active Power"
+                                                },
+                                                "properties": {
+                                                    "decimalPlaces": 0,
+                                                    "textAlign": "center",
+                                                    "textColor": "#1E313E",
+                                                    "textSize": "50px",
+                                                    "textWeight": "font-light",
+                                                    "unit": "W",
+                                                    "unitSize": "20px"
+                                                },
+                                                "sources": [
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "mongodb",
+                                                            "id": "milesight_ws515_data",
+                                                            "mapping": "active_power",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#9b59b6",
+                                                        "name": "Power",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "mode": "latest"
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "text"
+                                            },
+                                            {
+                                                "layout": {
+                                                    "col": 2,
+                                                    "row": 4,
+                                                    "sizeX": 2,
+                                                    "sizeY": 4
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "Power Factor"
+                                                },
+                                                "properties": {
+                                                    "decimalPlaces": 0,
+                                                    "textAlign": "center",
+                                                    "textColor": "#1E313E",
+                                                    "textSize": "50px",
+                                                    "textWeight": "font-light",
+                                                    "unit": "%",
+                                                    "unitSize": "20px"
+                                                },
+                                                "sources": [
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "mongodb",
+                                                            "id": "milesight_ws515_data",
+                                                            "mapping": "power_factor",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#16a085",
+                                                        "name": "PF",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "mode": "latest"
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "text"
+                                            },
+                                            {
+                                                "layout": {
+                                                    "col": 4,
+                                                    "row": 4,
+                                                    "sizeX": 2,
+                                                    "sizeY": 4
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "Power Consumption"
+                                                },
+                                                "properties": {
+                                                    "decimalPlaces": 0,
+                                                    "textAlign": "center",
+                                                    "textColor": "#1E313E",
+                                                    "textSize": "45px",
+                                                    "textWeight": "font-light",
+                                                    "unit": "Wh",
+                                                    "unitSize": "20px"
+                                                },
+                                                "sources": [
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "mongodb",
+                                                            "id": "milesight_ws515_data",
+                                                            "mapping": "power_consumption",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#34495e",
+                                                        "name": "Consumption",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "mode": "latest"
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "text"
+                                            },
+                                            {
+                                                "layout": {
+                                                    "col": 0,
+                                                    "row": 8,
+                                                    "sizeX": 6,
+                                                    "sizeY": 10
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "Power & Voltage (24h)"
+                                                },
+                                                "properties": {
+                                                    "alignTimeSeries": false,
+                                                    "dataAppend": false,
+                                                    "options": "var options = {\n    chart: {\n        type: 'line',\n        stacked: false\n    },\n    dataLabels: {\n        enabled: false\n    },\n    stroke: {\n        curve: 'smooth',\n        width: [3, 3]\n    },\n    xaxis: {\n        type: 'datetime',\n        labels: {\n            datetimeUTC: false\n        },\n        tooltip: {\n            enabled: false\n        }\n    },\n    yaxis: [\n        {\n            title: {\n                text: 'Power (W)'\n            },\n            labels: {\n                formatter: function (val) {\n                    if (val !== null && typeof val !== 'undefined')\n                        return val.toFixed(0);\n                }\n            }\n        },\n        {\n            opposite: true,\n            title: {\n                text: 'Voltage (V)'\n            },\n            labels: {\n                formatter: function (val) {\n                    if (val !== null && typeof val !== 'undefined')\n                        return val.toFixed(1);\n                }\n            }\n        }\n    ],\n    tooltip: {\n        x: {\n            format: 'dd/MM/yyyy HH:mm:ss'\n        }\n    }\n};\n",
+                                                    "realTimeUpdate": true
+                                                },
+                                                "sources": [
+                                                    {
+                                                        "aggregation": {},
+                                                        "bucket": {
+                                                            "backend": "mongodb",
+                                                            "id": "milesight_ws515_data",
+                                                            "mapping": "active_power",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#9b59b6",
+                                                        "name": "Active Power",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "magnitude": "hour",
+                                                            "mode": "relative",
+                                                            "period": "latest",
+                                                            "value": 24
+                                                        }
+                                                    },
+                                                    {
+                                                        "aggregation": {},
+                                                        "bucket": {
+                                                            "backend": "mongodb",
+                                                            "id": "milesight_ws515_data",
+                                                            "mapping": "voltage",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#f39c12",
+                                                        "name": "Voltage",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "magnitude": "hour",
+                                                            "mode": "relative",
+                                                            "period": "latest",
+                                                            "value": 24
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "apex_charts"
+                                            },
+                                            {
+                                                "layout": {
+                                                    "col": 0,
+                                                    "row": 18,
+                                                    "sizeX": 3,
+                                                    "sizeY": 10
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "Current (24h)"
+                                                },
+                                                "properties": {
+                                                    "alignTimeSeries": false,
+                                                    "dataAppend": false,
+                                                    "options": "var options = {\n    chart: {\n        type: 'area'\n    },\n    dataLabels: {\n        enabled: false\n    },\n    stroke: {\n        curve: 'smooth'\n    },\n    xaxis: {\n        type: 'datetime',\n        labels: {\n            datetimeUTC: false\n        },\n        tooltip: {\n            enabled: false\n        }\n    },\n    yaxis: {\n        title: {\n            text: 'Current (mA)'\n        },\n        labels: {\n            formatter: function (val) {\n                if (val !== null && typeof val !== 'undefined')\n                    return val.toFixed(0);\n            }\n        }\n    },\n    tooltip: {\n        x: {\n            format: 'dd/MM/yyyy HH:mm:ss'\n        }\n    }\n};\n",
+                                                    "realTimeUpdate": true
+                                                },
+                                                "sources": [
+                                                    {
+                                                        "aggregation": {},
+                                                        "bucket": {
+                                                            "backend": "mongodb",
+                                                            "id": "milesight_ws515_data",
+                                                            "mapping": "current",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#e74c3c",
+                                                        "name": "Current",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "magnitude": "hour",
+                                                            "mode": "relative",
+                                                            "period": "latest",
+                                                            "value": 24
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "apex_charts"
+                                            },
+                                            {
+                                                "layout": {
+                                                    "col": 3,
+                                                    "row": 18,
+                                                    "sizeX": 3,
+                                                    "sizeY": 10
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "Power Consumption (7 days)"
+                                                },
+                                                "properties": {
+                                                    "alignTimeSeries": false,
+                                                    "dataAppend": false,
+                                                    "options": "var options = {\n    chart: {\n        type: 'bar'\n    },\n    plotOptions: {\n        bar: {\n            horizontal: false,\n            columnWidth: '55%',\n            endingShape: 'rounded'\n        }\n    },\n    dataLabels: {\n        enabled: false\n    },\n    xaxis: {\n        type: 'datetime',\n        labels: {\n            datetimeUTC: false\n        }\n    },\n    yaxis: {\n        title: {\n            text: 'Consumption (Wh)'\n        },\n        labels: {\n            formatter: function (val) {\n                if (val !== null && typeof val !== 'undefined')\n                    return val.toFixed(0);\n            }\n        }\n    },\n    tooltip: {\n        x: {\n            format: 'dd/MM/yyyy HH:mm:ss'\n        }\n    }\n};\n",
+                                                    "realTimeUpdate": true
+                                                },
+                                                "sources": [
+                                                    {
+                                                        "aggregation": {},
+                                                        "bucket": {
+                                                            "backend": "mongodb",
+                                                            "id": "milesight_ws515_data",
+                                                            "mapping": "power_consumption",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#34495e",
+                                                        "name": "Consumption",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "magnitude": "day",
+                                                            "mode": "relative",
+                                                            "period": "latest",
+                                                            "value": 7
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "apex_charts"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Temperature",
+                                        "widgets": [
+                                            {
+                                                "layout": {
+                                                    "col": 0,
+                                                    "row": 0,
+                                                    "sizeX": 3,
+                                                    "sizeY": 6
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "Temperature"
+                                                },
+                                                "properties": {
+                                                    "decimalPlaces": 1,
+                                                    "textAlign": "center",
+                                                    "textColor": "#1E313E",
+                                                    "textSize": "75px",
+                                                    "textWeight": "font-light",
+                                                    "unit": "°C",
+                                                    "unitSize": "25px"
+                                                },
+                                                "sources": [
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "mongodb",
+                                                            "id": "milesight_ws515_data",
+                                                            "mapping": "temperature",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#d1311f",
+                                                        "name": "Temperature",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "mode": "latest"
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "text"
+                                            },
+                                            {
+                                                "layout": {
+                                                    "col": 3,
+                                                    "row": 0,
+                                                    "sizeX": 3,
+                                                    "sizeY": 6
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "Temperature Alarm"
+                                                },
+                                                "properties": {
+                                                    "decimalPlaces": 0,
+                                                    "textAlign": "center",
+                                                    "textColor": "#1E313E",
+                                                    "textColorConditions": [
+                                                        {
+                                                            "color": "#2ebd59",
+                                                            "condition": "==",
+                                                            "value": "threshold alarm release"
+                                                        },
+                                                        {
+                                                            "color": "#f39c12",
+                                                            "condition": "==",
+                                                            "value": "threshold alarm"
+                                                        },
+                                                        {
+                                                            "color": "#d1311f",
+                                                            "condition": "==",
+                                                            "value": "overheat alarm"
+                                                        },
+                                                        {
+                                                            "color": "#e67e22",
+                                                            "condition": "==",
+                                                            "value": "mutation alarm"
+                                                        }
+                                                    ],
+                                                    "textSize": "30px",
+                                                    "textWeight": "font-light",
+                                                    "unit": "",
+                                                    "unitSize": "20px"
+                                                },
+                                                "sources": [
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "mongodb",
+                                                            "id": "milesight_ws515_data",
+                                                            "mapping": "temperature_alarm",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#1abc9c",
+                                                        "name": "Alarm Status",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "mode": "latest"
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "text"
+                                            },
+                                            {
+                                                "layout": {
+                                                    "col": 0,
+                                                    "row": 6,
+                                                    "sizeX": 6,
+                                                    "sizeY": 12
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "Temperature History (7 days)"
+                                                },
+                                                "properties": {
+                                                    "alignTimeSeries": false,
+                                                    "dataAppend": false,
+                                                    "options": "var options = {\n    chart: {\n        type: 'line'\n    },\n    dataLabels: {\n        enabled: false\n    },\n    stroke: {\n        curve: 'smooth',\n        width: 2\n    },\n    xaxis: {\n        type: 'datetime',\n        labels: {\n            datetimeUTC: false\n        },\n        tooltip: {\n            enabled: false\n        }\n    },\n    yaxis: {\n        title: {\n            text: 'Temperature (°C)'\n        },\n        labels: {\n            formatter: function (val) {\n                if (val !== null && typeof val !== 'undefined')\n                    return val.toFixed(1);\n            }\n        }\n    },\n    tooltip: {\n        x: {\n            format: 'dd/MM/yyyy HH:mm:ss'\n        }\n    }\n};\n",
+                                                    "realTimeUpdate": true
+                                                },
+                                                "sources": [
+                                                    {
+                                                        "aggregation": {},
+                                                        "bucket": {
+                                                            "backend": "mongodb",
+                                                            "id": "milesight_ws515_data",
+                                                            "mapping": "temperature",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#d1311f",
+                                                        "name": "Temperature",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "magnitude": "day",
+                                                            "mode": "relative",
+                                                            "period": "latest",
+                                                            "value": 7
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "apex_charts"
+                                            }
+                                        ]
+                                    }
+                                ]
                             }
-                          }
-                        ],
-                        "type": "apex_charts"
-                      },
-                      {
-                        "layout": {
-                          "col": 0,
-                          "row": 18,
-                          "sizeX": 3,
-                          "sizeY": 10
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "Current (24h)"
-                        },
-                        "properties": {
-                          "alignTimeSeries": false,
-                          "dataAppend": false,
-                          "options": "var options = {\n    chart: {\n        type: 'area'\n    },\n    dataLabels: {\n        enabled: false\n    },\n    stroke: {\n        curve: 'smooth'\n    },\n    xaxis: {\n        type: 'datetime',\n        labels: {\n            datetimeUTC: false\n        },\n        tooltip: {\n            enabled: false\n        }\n    },\n    yaxis: {\n        title: {\n            text: 'Current (mA)'\n        },\n        labels: {\n            formatter: function (val) {\n                if (val !== null && typeof val !== 'undefined')\n                    return val.toFixed(0);\n            }\n        }\n    },\n    tooltip: {\n        x: {\n            format: 'dd/MM/yyyy HH:mm:ss'\n        }\n    }\n};\n",
-                          "realTimeUpdate": true
-                        },
-                        "sources": [
-                          {
-                            "aggregation": {},
-                            "bucket": {
-                              "backend": "mongodb",
-                              "id": "milesight_ws515_data",
-                              "mapping": "current",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#e74c3c",
-                            "name": "Current",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "hour",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 24
-                            }
-                          }
-                        ],
-                        "type": "apex_charts"
-                      },
-                      {
-                        "layout": {
-                          "col": 3,
-                          "row": 18,
-                          "sizeX": 3,
-                          "sizeY": 10
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "Power Consumption (7 days)"
-                        },
-                        "properties": {
-                          "alignTimeSeries": false,
-                          "dataAppend": false,
-                          "options": "var options = {\n    chart: {\n        type: 'bar'\n    },\n    plotOptions: {\n        bar: {\n            horizontal: false,\n            columnWidth: '55%',\n            endingShape: 'rounded'\n        }\n    },\n    dataLabels: {\n        enabled: false\n    },\n    xaxis: {\n        type: 'datetime',\n        labels: {\n            datetimeUTC: false\n        }\n    },\n    yaxis: {\n        title: {\n            text: 'Consumption (Wh)'\n        },\n        labels: {\n            formatter: function (val) {\n                if (val !== null && typeof val !== 'undefined')\n                    return val.toFixed(0);\n            }\n        }\n    },\n    tooltip: {\n        x: {\n            format: 'dd/MM/yyyy HH:mm:ss'\n        }\n    }\n};\n",
-                          "realTimeUpdate": true
-                        },
-                        "sources": [
-                          {
-                            "aggregation": {},
-                            "bucket": {
-                              "backend": "mongodb",
-                              "id": "milesight_ws515_data",
-                              "mapping": "power_consumption",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#34495e",
-                            "name": "Consumption",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "day",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 7
-                            }
-                          }
-                        ],
-                        "type": "apex_charts"
-                      }
+                        }
                     ]
-                  },
-                  {
-                    "name": "Temperature",
-                    "widgets": [
-                      {
-                        "layout": {
-                          "col": 0,
-                          "row": 0,
-                          "sizeX": 3,
-                          "sizeY": 6
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "Temperature"
-                        },
-                        "properties": {
-                          "decimalPlaces": 1,
-                          "textAlign": "center",
-                          "textColor": "#1E313E",
-                          "textSize": "75px",
-                          "textWeight": "font-light",
-                          "unit": "°C",
-                          "unitSize": "25px"
-                        },
-                        "sources": [
-                          {
-                            "bucket": {
-                              "backend": "mongodb",
-                              "id": "milesight_ws515_data",
-                              "mapping": "temperature",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#d1311f",
-                            "name": "Temperature",
-                            "source": "bucket",
-                            "timespan": {
-                              "mode": "latest"
-                            }
-                          }
-                        ],
-                        "type": "text"
-                      },
-                      {
-                        "layout": {
-                          "col": 3,
-                          "row": 0,
-                          "sizeX": 3,
-                          "sizeY": 6
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "Temperature Alarm"
-                        },
-                        "properties": {
-                          "decimalPlaces": 0,
-                          "textAlign": "center",
-                          "textColor": "#1E313E",
-                          "textColorConditions": [
-                            {
-                              "color": "#2ebd59",
-                              "condition": "==",
-                              "value": "threshold alarm release"
-                            },
-                            {
-                              "color": "#f39c12",
-                              "condition": "==",
-                              "value": "threshold alarm"
-                            },
-                            {
-                              "color": "#d1311f",
-                              "condition": "==",
-                              "value": "overheat alarm"
-                            },
-                            {
-                              "color": "#e67e22",
-                              "condition": "==",
-                              "value": "mutation alarm"
-                            }
-                          ],
-                          "textSize": "30px",
-                          "textWeight": "font-light",
-                          "unit": "",
-                          "unitSize": "20px"
-                        },
-                        "sources": [
-                          {
-                            "bucket": {
-                              "backend": "mongodb",
-                              "id": "milesight_ws515_data",
-                              "mapping": "temperature_alarm",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#1abc9c",
-                            "name": "Alarm Status",
-                            "source": "bucket",
-                            "timespan": {
-                              "mode": "latest"
-                            }
-                          }
-                        ],
-                        "type": "text"
-                      },
-                      {
-                        "layout": {
-                          "col": 0,
-                          "row": 6,
-                          "sizeX": 6,
-                          "sizeY": 12
-                        },
-                        "panel": {
-                          "color": "#ffffff",
-                          "currentColor": "#ffffff",
-                          "showOffline": {
-                            "type": "none"
-                          },
-                          "title": "Temperature History (7 days)"
-                        },
-                        "properties": {
-                          "alignTimeSeries": false,
-                          "dataAppend": false,
-                          "options": "var options = {\n    chart: {\n        type: 'line'\n    },\n    dataLabels: {\n        enabled: false\n    },\n    stroke: {\n        curve: 'smooth',\n        width: 2\n    },\n    xaxis: {\n        type: 'datetime',\n        labels: {\n            datetimeUTC: false\n        },\n        tooltip: {\n            enabled: false\n        }\n    },\n    yaxis: {\n        title: {\n            text: 'Temperature (°C)'\n        },\n        labels: {\n            formatter: function (val) {\n                if (val !== null && typeof val !== 'undefined')\n                    return val.toFixed(1);\n            }\n        }\n    },\n    tooltip: {\n        x: {\n            format: 'dd/MM/yyyy HH:mm:ss'\n        }\n    }\n};\n",
-                          "realTimeUpdate": true
-                        },
-                        "sources": [
-                          {
-                            "aggregation": {},
-                            "bucket": {
-                              "backend": "mongodb",
-                              "id": "milesight_ws515_data",
-                              "mapping": "temperature",
-                              "tags": {
-                                "device": [],
-                                "group": []
-                              }
-                            },
-                            "color": "#d1311f",
-                            "name": "Temperature",
-                            "source": "bucket",
-                            "timespan": {
-                              "magnitude": "day",
-                              "mode": "relative",
-                              "period": "latest",
-                              "value": 7
-                            }
-                          }
-                        ],
-                        "type": "apex_charts"
-                      }
-                    ]
-                  }
-                ]
-              }
+                }
             }
-          ]
-        }
-      }
-    ]
-  }
+        ]
+    }
 }
