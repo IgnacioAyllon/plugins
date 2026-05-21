@@ -1,0 +1,1022 @@
+{
+  "name": "milesight_iot_uc50x",
+  "version": "1.0.0",
+  "description": "LoRaWAN® controller for data acquisition with multiple I/O interfaces (analog/digital input-output, serial port). Features IP67 enclosure, M12 connectors, solar panel or battery power. Simplifies LoRaWAN® deployment in harsh outdoor environments.",
+  "author": "Thinger.io",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thinger-io/plugins.git",
+    "directory": "milesight-iot-uc50x"
+  },
+  "metadata": {
+    "name": "Milesight-Iot UC50X",
+    "description": "LoRaWAN® controller for data acquisition with multiple I/O interfaces (analog/digital input-output, serial port). Features IP67 enclosure, M12 connectors, solar panel or battery power. Simplifies LoRaWAN® deployment in harsh outdoor environments.",
+    "image": "assets/uc50x.png",
+    "category": "devices",
+    "vendor": "milesight-iot"
+  },
+  "resources": {
+    "products": [
+      {
+        "description": "LoRaWAN® controller for data acquisition with multiple I/O interfaces (analog/digital input-output, serial port). Features IP67 enclosure, M12 connectors, solar panel or battery power. Simplifies LoRaWAN® deployment in harsh outdoor environments.",
+        "enabled": true,
+        "name": "Milesight-Iot UC50X",
+        "product": "milesight_iot_uc50x",
+        "profile": {
+          "api": {
+            "downlink": {
+              "enabled": true,
+              "handle_connectivity": false,
+              "request": {
+                "data": {
+                  "path": "/downlink",
+                  "payload": "{\r\n    \"data\"    : \"{{payload.data=\"\"}}\",\r\n    \"port\"    :  {{payload.port=2}},\r\n    \"priority\":  {{payload.priority=3}},\r\n    \"confirmed\" :  {{payload.confirmed=false}},\r\n    \"uplink\"  :  {{property.uplink}} \r\n}",
+                  "payload_type": "",
+                  "plugin": "{{property.uplink.source}}",
+                  "target": "plugin_endpoint"
+                }
+              }
+            },
+            "uplink": {
+              "enabled": true,
+              "handle_connectivity": true,
+              "request": {
+                "data": {
+                  "payload": "{{payload}}",
+                  "payload_type": "source_payload",
+                  "resource_stream": "uplink",
+                  "target": "resource_stream"
+                }
+              }
+            }
+          },
+          "autoprovisions": {
+            "device_autoprovisioning": {
+              "config": {
+                "mode": "pattern",
+                "pattern": "uc50x_.*"
+              },
+              "enabled": true
+            }
+          },
+          "buckets": {
+            "milesight_uc50x_data": {
+              "backend": "mongodb",
+              "data": {
+                "payload": "{{payload}}",
+                "payload_type": "source_payload",
+                "resource_stream": "uplink_decoded",
+                "source": "resource_stream"
+              },
+              "enabled": true,
+              "retention": {
+                "period": 3,
+                "unit": "months"
+              },
+              "tags": []
+            }
+          },
+          "code": {
+            "code": "function decodeThingerUplink(thingerData) {\n    // 0. If data has already been decoded, we will return it\n    if (thingerData.decodedPayload) return thingerData.decodedPayload;\n    \n    // 1. Extract and Validate Input\n    // We need 'payload' (hex string) and 'fPort' (integer)\n    const hexPayload = thingerData.payload || \"\";\n    const port = thingerData.fPort || 1;\n\n    // 2. Convert Hex String to Byte Array\n    const bytes = [];\n    for (let i = 0; i < hexPayload.length; i += 2) {\n        bytes.push(parseInt(hexPayload.substr(i, 2), 16));\n    }\n\n    // 3. Dynamic Function Detection and Execution\n    \n    // CASE A: (The Things Stack v3)\n    if (typeof decodeUplink === 'function') {\n        try {\n            const input = {\n                bytes: bytes,\n                fPort: port\n            };\n            var result = decodeUplink(input);\n            \n            if (result.data) return result.data;\n\n            return result; \n        } catch (e) {\n            console.error(\"Error inside decodeUplink:\", e);\n            throw e;\n        }\n    }\n\n    // CASE B: Legacy TTN (v2)\n    else if (typeof Decoder === 'function') {\n        try {\n            return Decoder(bytes, port);\n        } catch (e) {\n            console.error(\"Error inside Decoder:\", e);\n            throw e;\n        }\n    }\n\n    // CASE C: No decoder found\n    else {\n        throw new Error(\"No compatible TTN decoder function (decodeUplink or Decoder) found in scope.\");\n    }\n}\n\n\n// TTN decoder\n/**\n * Payload Decoder\n *\n * Copyright 2025 Milesight IoT\n *\n * @product UC50x\n */\nvar RAW_VALUE = 0x00;\n\n/* eslint no-redeclare: \"off\" */\n/* eslint-disable */\n// Chirpstack v4\nfunction decodeUplink(input) {\n    var decoded = milesightDeviceDecode(input.bytes);\n    return { data: decoded };\n}\n\n// Chirpstack v3\nfunction Decode(fPort, bytes) {\n    return milesightDeviceDecode(bytes);\n}\n\n// The Things Network\nfunction Decoder(bytes, port) {\n    return milesightDeviceDecode(bytes);\n}\n/* eslint-enable */\n\nvar gpio_chns = [0x03, 0x04];\nvar adc_chns = [0x05, 0x06];\nvar adc_alarm_chns = [0x85, 0x86];\n\nfunction milesightDeviceDecode(bytes) {\n    var decoded = {};\n\n    for (var i = 0; i < bytes.length; ) {\n        var channel_id = bytes[i++];\n        var channel_type = bytes[i++];\n\n        // IPSO VERSION\n        if (channel_id === 0xff && channel_type === 0x01) {\n            decoded.ipso_version = readProtocolVersion(bytes[i]);\n            i += 1;\n        }\n        // HARDWARE VERSION\n        else if (channel_id === 0xff && channel_type === 0x09) {\n            decoded.hardware_version = readHardwareVersion(bytes.slice(i, i + 2));\n            i += 2;\n        }\n        // FIRMWARE VERSION\n        else if (channel_id === 0xff && channel_type === 0x0a) {\n            decoded.firmware_version = readFirmwareVersion(bytes.slice(i, i + 2));\n            i += 2;\n        }\n        // TSL VERSION\n        else if (channel_id === 0xff && channel_type === 0xff) {\n            decoded.tsl_version = readTslVersion(bytes.slice(i, i + 2));\n            i += 2;\n        }\n        // SERIAL NUMBER\n        else if (channel_id === 0xff && channel_type === 0x16) {\n            decoded.sn = readSerialNumber(bytes.slice(i, i + 8));\n            i += 8;\n        }\n        // LORAWAN CLASS TYPE\n        else if (channel_id === 0xff && channel_type === 0x0f) {\n            decoded.lorawan_class = readLoRaWANClass(bytes[i]);\n            i += 1;\n        }\n        // RESET EVENT\n        else if (channel_id === 0xff && channel_type === 0xfe) {\n            decoded.reset_event = readResetEvent(1);\n            i += 1;\n        }\n        // DEVICE STATUS\n        else if (channel_id === 0xff && channel_type === 0x0b) {\n            decoded.device_status = readOnOffStatus(1);\n            i += 1;\n        }\n        // BATTERY\n        else if (channel_id === 0x01 && channel_type === 0x75) {\n            decoded.battery = readUInt8(bytes[i]);\n            i += 1;\n        }\n        // GPIO (Input)\n        else if (includes(gpio_chns, channel_id) && channel_type === 0x00) {\n            var gpio_channel_name = \"gpio_input_\" + (channel_id - gpio_chns[0] + 1);\n            decoded[gpio_channel_name] = readOnOffStatus(bytes[i]);\n            i += 1;\n        }\n        // GPIO (Output)\n        else if (includes(gpio_chns, channel_id) && channel_type === 0x01) {\n            var gpio_channel_name = \"gpio_output_\" + (channel_id - gpio_chns[0] + 1);\n            decoded[gpio_channel_name] = readOnOffStatus(bytes[i]);\n            i += 1;\n        }\n        //  GPIO (GPIO as PULSE COUNTER)\n        else if (includes(gpio_chns, channel_id) && channel_type === 0xc8) {\n            var gpio_channel_name = \"gpio_counter_\" + (channel_id - gpio_chns[0] + 1);\n            decoded[gpio_channel_name] = readUInt32LE(bytes.slice(i, i + 4));\n            i += 4;\n        }\n        // ANALOG INPUT TYPE\n        else if (channel_id === 0xff && channel_type === 0x14) {\n            var channel = bytes[i];\n            var chn_name = \"analog_input_\" + (channel >>> 4) + \"_type\";\n            decoded[chn_name] = readAnalogInputType(channel & 0x0f);\n            i += 1;\n        }\n        // ADC (UC50x v2)\n        // firmware version 1.10 and below and UC50x V1, change 1000 to 100.\n        else if (includes(adc_chns, channel_id) && channel_type === 0x02) {\n            var adc_channel_name = \"analog_input_\" + (channel_id - adc_chns[0] + 1);\n            decoded[adc_channel_name] = readInt16LE(bytes.slice(i, i + 2)) / 1000;\n            decoded[adc_channel_name + \"_min\"] = readInt16LE(bytes.slice(i + 2, i + 4)) / 1000;\n            decoded[adc_channel_name + \"_max\"] = readInt16LE(bytes.slice(i + 4, i + 6)) / 1000;\n            decoded[adc_channel_name + \"_avg\"] = readInt16LE(bytes.slice(i + 6, i + 8)) / 1000;\n            i += 8;\n        }\n        // ADC (UC50x v3)\n        else if (includes(adc_chns, channel_id) && channel_type === 0xe2) {\n            var adc_channel_name = \"analog_input_\" + (channel_id - adc_chns[0] + 1);\n            decoded[adc_channel_name] = readFloat16LE(bytes.slice(i, i + 2));\n            decoded[adc_channel_name + \"_min\"] = readFloat16LE(bytes.slice(i + 2, i + 4));\n            decoded[adc_channel_name + \"_max\"] = readFloat16LE(bytes.slice(i + 4, i + 6));\n            decoded[adc_channel_name + \"_avg\"] = readFloat16LE(bytes.slice(i + 6, i + 8));\n            i += 8;\n        }\n        // SDI-12\n        else if (channel_id === 0x08 && channel_type === 0xdb) {\n            var name = \"sdi12_\" + (bytes[i++] + 1);\n            decoded[name] = readString(bytes.slice(i, i + 36));\n            i += 36;\n        }\n        // MODBUS\n        else if ((channel_id === 0xff || channel_id === 0x80) && channel_type === 0x0e) {\n            var modbus_chn_id = bytes[i++] - 6;\n            var package_type = bytes[i++];\n            var data_type = package_type & 0x07; // 0x07 = 0b00000111\n            var chn = \"modbus_chn_\" + modbus_chn_id;\n            switch (data_type) {\n                case 0:\n                case 1:\n                    decoded[chn] = readOnOffStatus(bytes[i]);\n                    i += 1;\n                    break;\n                case 2:\n                case 3:\n                    decoded[chn] = readUInt16LE(bytes.slice(i, i + 2));\n                    i += 2;\n                    break;\n                case 4:\n                case 6:\n                    decoded[chn] = readUInt32LE(bytes.slice(i, i + 4));\n                    i += 4;\n                    break;\n                case 5:\n                case 7:\n                    decoded[chn] = readFloatLE(bytes.slice(i, i + 4));\n                    i += 4;\n                    break;\n            }\n            if (channel_id === 0x80) {\n                decoded[chn + \"_alarm\"] = readAlarm(bytes[i++]);\n            }\n        }\n        // MODBUS READ ERROR\n        else if (channel_id === 0xff && channel_type === 0x15) {\n            var modbus_error_chn_id = bytes[i] - 6;\n            var channel_name = \"modbus_chn_\" + modbus_error_chn_id;\n            decoded[channel_name + \"_alarm\"] = \"read error\";\n            i += 1;\n        }\n        // ADC alert (UC50x v3)\n        else if (includes(adc_alarm_chns, channel_id) && channel_type === 0xe2) {\n            var adc_channel_name = \"analog_input_\" + (channel_id - adc_alarm_chns[0] + 1);\n            decoded[adc_channel_name] = readFloat16LE(bytes.slice(i, i + 2));\n            decoded[adc_channel_name + \"_min\"] = readFloat16LE(bytes.slice(i + 2, i + 4));\n            decoded[adc_channel_name + \"_max\"] = readFloat16LE(bytes.slice(i + 4, i + 6));\n            decoded[adc_channel_name + \"_avg\"] = readFloat16LE(bytes.slice(i + 6, i + 8));\n            i += 8;\n            decoded[adc_channel_name + \"_alarm\"] = readAlarm(bytes[i++]);\n        }\n        // HISTORY DATA (GPIO / ADC)\n        else if (channel_id === 0x20 && channel_type === 0xdc) {\n            var timestamp = readUInt32LE(bytes.slice(i, i + 4));\n            var data = { timestamp: timestamp };\n            var gpio_1_type = readUInt8(bytes[i + 4]);\n            if (gpio_1_type === 0x00) {\n                data.gpio_input_1 = readOnOffStatus(readUInt32LE(bytes.slice(i + 5, i + 9)));\n            } else if (gpio_1_type === 0x01) {\n                data.gpio_output_1 = readOnOffStatus(readUInt32LE(bytes.slice(i + 5, i + 9)));\n            } else if (gpio_1_type === 0x02) {\n                data.gpio_counter_1 = readUInt32LE(bytes.slice(i + 5, i + 9));\n            }\n            var gpio_2_type = readUInt8(bytes[i + 9]);\n            if (gpio_2_type === 0x00) {\n                data.gpio_input_2 = readOnOffStatus(readUInt32LE(bytes.slice(i + 10, i + 14)));\n            } else if (gpio_2_type === 0x01) {\n                data.gpio_output_2 = readOnOffStatus(readUInt32LE(bytes.slice(i + 10, i + 14)));\n            } else if (gpio_2_type === 0x02) {\n                data.gpio_counter_2 = readUInt32LE(bytes.slice(i + 10, i + 14));\n            }\n            data.analog_input_1 = readInt32LE(bytes.slice(i + 14, i + 18)) / 1000;\n            data.analog_input_2 = readInt32LE(bytes.slice(i + 18, i + 22)) / 1000;\n            i += 22;\n            decoded.history = decoded.history || [];\n            decoded.history.push(data);\n        }\n        // HISTORY DATA (SDI-12)\n        else if (channel_id === 0x20 && channel_type === 0xe0) {\n            var timestamp = readUInt32LE(bytes.slice(i, i + 4));\n            var channel_mask = numToBits(readUInt16LE(bytes.slice(i + 4, i + 6)), 16);\n            i += 6;\n            var data = { timestamp: timestamp };\n            for (var j = 0; j < channel_mask.length; j++) {\n                // skip if channel is not enabled\n                if (channel_mask[j] === 0) continue;\n                var name = \"sdi12_\" + (j + 1);\n                data[name] = readString(bytes.slice(i, i + 36));\n                i += 36;\n            }\n            decoded.history = decoded.history || [];\n            decoded.history.push(data);\n        }\n        // HISTORY DATA (MODBUS)\n        else if (channel_id === 0x20 && channel_type === 0xdd) {\n            var timestamp = readUInt32LE(bytes.slice(i, i + 4));\n            var channel_mask = numToBits(readUInt16LE(bytes.slice(i + 4, i + 6)), 16);\n            i += 6;\n            var data = { timestamp: timestamp };\n            for (var j = 0; j < channel_mask.length; j++) {\n                // skip if channel is not enabled\n                if (channel_mask[j] === 0) continue;\n\n                var name = \"modbus_chn_\" + (j + 1);\n                var type = bytes[i++] & 0x07; // 0x07 = 0b00000111\n                // 5 MB_REG_HOLD_FLOAT, 7 MB_REG_INPUT_FLOAT\n                if (type === 5 || type === 7) {\n                    data[name] = readFloatLE(bytes.slice(i, i + 4));\n                } else {\n                    data[name] = readUInt32LE(bytes.slice(i, i + 4));\n                }\n                i += 4;\n            }\n            decoded.history = decoded.history || [];\n            decoded.history.push(data);\n        }\n        // DOWNLINK RESPONSE\n        else if (channel_id === 0xfe || channel_id === 0xff) {\n            var result = handle_downlink_response(channel_type, bytes, i);\n            decoded = Object.assign(decoded, result.data);\n            i = result.offset;\n        } else {\n            break;\n        }\n    }\n\n    return decoded;\n}\n\nfunction handle_downlink_response(channel_type, bytes, offset) {\n    var decoded = {};\n\n    switch (channel_type) {\n        case 0x02:\n            decoded.collection_interval = readUInt16LE(bytes.slice(offset, offset + 2));\n            offset += 2;\n            break;\n        case 0x03:\n            decoded.report_interval = readUInt16LE(bytes.slice(offset, offset + 2));\n            offset += 2;\n            break;\n        case 0x10:\n            decoded.reboot = readYesNoStatus(1);\n            offset += 1;\n            break;\n        case 0x11:\n            decoded.timestamp = readUInt32LE(bytes.slice(offset, offset + 4));\n            offset += 4;\n            break;\n        case 0x17:\n            decoded.time_zone = readTimeZone(readInt16LE(bytes.slice(offset, offset + 2)));\n            offset += 2;\n            break;\n        case 0x27:\n            decoded.clear_history = readYesNoStatus(1);\n            offset += 1;\n            break;\n        case 0x28:\n            decoded.report_status = readYesNoStatus(1);\n            offset += 1;\n            break;\n        case 0x68:\n            decoded.history_enable = readEnableStatus(bytes[offset]);\n            offset += 1;\n            break;\n        case 0x69:\n            decoded.retransmit_enable = readEnableStatus(bytes[offset]);\n            offset += 1;\n            break;\n        case 0x6a:\n            var type = readUInt8(bytes[offset]);\n            if (type === 0x00) {\n                decoded.retransmit_interval = readUInt16LE(bytes.slice(offset + 1, offset + 3));\n            } else if (type === 0x01) {\n                decoded.resend_interval = readUInt16LE(bytes.slice(offset + 1, offset + 3));\n            }\n            offset += 3;\n            break;\n        default:\n            throw new Error(\"unknown downlink response\");\n    }\n\n    return { data: decoded, offset: offset };\n}\n\nfunction readProtocolVersion(bytes) {\n    var major = (bytes & 0xf0) >> 4;\n    var minor = bytes & 0x0f;\n    return \"v\" + major + \".\" + minor;\n}\n\nfunction readHardwareVersion(bytes) {\n    var major = (bytes[0] & 0xff).toString(16);\n    var minor = (bytes[1] & 0xff) >> 4;\n    return \"v\" + major + \".\" + minor;\n}\n\nfunction readFirmwareVersion(bytes) {\n    var major = (bytes[0] & 0xff).toString(16);\n    var minor = (bytes[1] & 0xff).toString(16);\n    return \"v\" + major + \".\" + minor;\n}\n\nfunction readTslVersion(bytes) {\n    var major = bytes[0] & 0xff;\n    var minor = bytes[1] & 0xff;\n    return \"v\" + major + \".\" + minor;\n}\n\nfunction readSerialNumber(bytes) {\n    var temp = [];\n    for (var idx = 0; idx < bytes.length; idx++) {\n        temp.push((\"0\" + (bytes[idx] & 0xff).toString(16)).slice(-2));\n    }\n    return temp.join(\"\");\n}\n\nfunction readLoRaWANClass(type) {\n    var class_map = {\n        0: \"Class A\",\n        1: \"Class B\",\n        2: \"Class C\",\n        3: \"Class CtoB\",\n    };\n    return getValue(class_map, type);\n}\n\nfunction readResetEvent(status) {\n    var status_map = { 0: \"normal\", 1: \"reset\" };\n    return getValue(status_map, status);\n}\n\nfunction readOnOffStatus(status) {\n    var status_map = { 0: \"off\", 1: \"on\" };\n    return getValue(status_map, status);\n}\n\nfunction readEnableStatus(status) {\n    var status_map = { 0: \"disable\", 1: \"enable\" };\n    return getValue(status_map, status);\n}\n\nfunction readYesNoStatus(status) {\n    var status_map = { 0: \"no\", 1: \"yes\" };\n    return getValue(status_map, status);\n}\n\nfunction readTimeZone(time_zone) {\n    var timezone_map = { \"-120\": \"UTC-12\", \"-110\": \"UTC-11\", \"-100\": \"UTC-10\", \"-95\": \"UTC-9:30\", \"-90\": \"UTC-9\", \"-80\": \"UTC-8\", \"-70\": \"UTC-7\", \"-60\": \"UTC-6\", \"-50\": \"UTC-5\", \"-40\": \"UTC-4\", \"-35\": \"UTC-3:30\", \"-30\": \"UTC-3\", \"-20\": \"UTC-2\", \"-10\": \"UTC-1\", 0: \"UTC\", 10: \"UTC+1\", 20: \"UTC+2\", 30: \"UTC+3\", 35: \"UTC+3:30\", 40: \"UTC+4\", 45: \"UTC+4:30\", 50: \"UTC+5\", 55: \"UTC+5:30\", 57: \"UTC+5:45\", 60: \"UTC+6\", 65: \"UTC+6:30\", 70: \"UTC+7\", 80: \"UTC+8\", 90: \"UTC+9\", 95: \"UTC+9:30\", 100: \"UTC+10\", 105: \"UTC+10:30\", 110: \"UTC+11\", 120: \"UTC+12\", 127: \"UTC+12:45\", 130: \"UTC+13\", 140: \"UTC+14\" };\n    return getValue(timezone_map, time_zone);\n}\n\nfunction readAlarm(type) {\n    var alarm_map = { 1: \"threshold alarm\", 2: \"value change alarm\" };\n    return getValue(alarm_map, type);\n}\n\nfunction readAnalogInputType(type) {\n    var type_map = { 0: \"current\", 1: \"voltage\" };\n    return getValue(type_map, type);\n}\n\nfunction numToBits(num, bit_count) {\n    var bits = [];\n    for (var i = 0; i < bit_count; i++) {\n        bits.push((num >> i) & 1);\n    }\n    return bits;\n}\n\n/* eslint-disable */\nfunction readUInt8(bytes) {\n    return bytes & 0xff;\n}\n\nfunction readInt8(bytes) {\n    var ref = readUInt8(bytes);\n    return ref > 0x7f ? ref - 0x100 : ref;\n}\n\nfunction readUInt16LE(bytes) {\n    var value = (bytes[1] << 8) + bytes[0];\n    return value & 0xffff;\n}\n\nfunction readInt16LE(bytes) {\n    var ref = readUInt16LE(bytes);\n    return ref > 0x7fff ? ref - 0x10000 : ref;\n}\n\nfunction readUInt32LE(bytes) {\n    var value = (bytes[3] << 24) + (bytes[2] << 16) + (bytes[1] << 8) + bytes[0];\n    return value & 0xffffffff;\n}\n\nfunction readInt32LE(bytes) {\n    var ref = readUInt32LE(bytes);\n    return ref > 0x7fffffff ? ref - 0x100000000 : ref;\n}\n\nfunction readFloat16LE(bytes) {\n    var bits = (bytes[1] << 8) | bytes[0];\n    var sign = bits >>> 15 === 0 ? 1.0 : -1.0;\n    var e = (bits >>> 10) & 0x1f;\n    var m = e === 0 ? (bits & 0x3ff) << 1 : (bits & 0x3ff) | 0x400;\n    var f = sign * m * Math.pow(2, e - 25);\n    return f;\n}\n\nfunction readFloatLE(bytes) {\n    var bits = (bytes[3] << 24) | (bytes[2] << 16) | (bytes[1] << 8) | bytes[0];\n    var sign = bits >>> 31 === 0 ? 1.0 : -1.0;\n    var e = (bits >>> 23) & 0xff;\n    var m = e === 0 ? (bits & 0x7fffff) << 1 : (bits & 0x7fffff) | 0x800000;\n    var f = sign * m * Math.pow(2, e - 150);\n    return f;\n}\n\nfunction readString(bytes) {\n    var str = \"\";\n    for (var i = 0; i < bytes.length; i++) {\n        if (bytes[i] === 0) {\n            break;\n        }\n        str += String.fromCharCode(bytes[i]);\n    }\n    return str;\n}\n\nfunction includes(data, value) {\n    var size = data.length;\n    for (var i = 0; i < size; i++) {\n        if (data[i] == value) {\n            return true;\n        }\n    }\n    return false;\n}\n\nfunction getValue(map, key) {\n    if (RAW_VALUE) return key;\n\n    var value = map[key];\n    if (!value) value = \"unknown\";\n    return value;\n}\n\n//if (!Object.assign) {\n    Object.defineProperty(Object, \"assign\", {\n        enumerable: false,\n        configurable: true,\n        writable: true,\n        value: function (target) {\n            \"use strict\";\n            if (target == null) {\n                throw new TypeError(\"Cannot convert first argument to object\");\n            }\n\n            var to = Object(target);\n            for (var i = 1; i < arguments.length; i++) {\n                var nextSource = arguments[i];\n                if (nextSource == null) {\n                    continue;\n                }\n                nextSource = Object(nextSource);\n\n                var keysArray = Object.keys(Object(nextSource));\n                for (var nextIndex = 0, len = keysArray.length; nextIndex < len; nextIndex++) {\n                    var nextKey = keysArray[nextIndex];\n                    var desc = Object.getOwnPropertyDescriptor(nextSource, nextKey);\n                    if (desc !== undefined && desc.enumerable) {\n                        // concat array\n                        if (Array.isArray(to[nextKey]) && Array.isArray(nextSource[nextKey])) {\n                            to[nextKey] = to[nextKey].concat(nextSource[nextKey]);\n                        } else {\n                            to[nextKey] = nextSource[nextKey];\n                        }\n                    }\n                }\n            }\n            return to;\n        },\n    });\n//}",
+            "environment": "javascript",
+            "storage": "",
+            "version": "1.0"
+          },
+          "flows": {
+            "milesight_uc50x_decoder": {
+              "data": {
+                "payload": "{{payload}}",
+                "payload_function": "decodeThingerUplink",
+                "payload_type": "source_payload",
+                "resource": "uplink",
+                "source": "resource",
+                "update": "events"
+              },
+              "enabled": true,
+              "sink": {
+                "payload": "{{payload}}",
+                "payload_type": "source_payload",
+                "resource_stream": "uplink_decoded",
+                "target": "resource_stream"
+              },
+              "split_data": false
+            }
+          },
+          "properties": {
+            "uplink": {
+              "data": {
+                "payload": "{{payload}}",
+                "payload_type": "source_payload",
+                "resource": "uplink",
+                "source": "resource",
+                "update": "events"
+              },
+              "default": {
+                "source": "value"
+              },
+              "enabled": true
+            }
+          }
+        },
+        "_resources": {
+          "properties": [
+            {
+              "property": "dashboard",
+              "value": {
+                "tabs": [
+                  {
+                    "name": "Overview",
+                    "widgets": [
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 0,
+                          "sizeX": 2,
+                          "sizeY": 5
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Battery"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textSize": "75px",
+                          "textWeight": "font-light",
+                          "unit": "%",
+                          "unitSize": "20px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc50x_data",
+                              "mapping": "battery",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#2ebd59",
+                            "name": "Battery",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 5,
+                          "sizeX": 2,
+                          "sizeY": 5
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Battery Level"
+                        },
+                        "properties": {
+                          "color": "#2ebd59",
+                          "gradient": false,
+                          "max": 100,
+                          "min": 0,
+                          "unit": "%"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc50x_data",
+                              "mapping": "battery",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#2ebd59",
+                            "name": "Battery",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "gauge"
+                      },
+                      {
+                        "layout": {
+                          "col": 2,
+                          "row": 0,
+                          "sizeX": 4,
+                          "sizeY": 10
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Battery History (24h)"
+                        },
+                        "properties": {
+                          "alignTimeSeries": false,
+                          "dataAppend": false,
+                          "options": "var options = {\n    chart: {\n        type: 'line'\n    },\n    dataLabels: {\n        enabled: false\n    },\n    stroke: {\n        curve: 'smooth',\n        width: 2\n    },\n    xaxis: {\n        type: 'datetime',\n        labels: {\n            datetimeUTC: false\n        },\n        tooltip: {\n            enabled: false\n        }\n    },\n    yaxis: {\n        min: 0,\n        max: 100,\n        labels: {\n            formatter: function (val) {\n                if (val !== null && typeof val !== 'undefined')\n                    return val.toFixed(0) + '%';\n            }\n        }\n    },\n    tooltip: {\n        x: {\n            format: 'dd/MM/yyyy HH:mm:ss'\n        }\n    }\n};\n",
+                          "realTimeUpdate": true
+                        },
+                        "sources": [
+                          {
+                            "aggregation": {},
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc50x_data",
+                              "mapping": "battery",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#2ebd59",
+                            "name": "Battery",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          }
+                        ],
+                        "type": "apex_charts"
+                      },
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 10,
+                          "sizeX": 2,
+                          "sizeY": 4
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "GPIO Input 1"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textSize": "50px",
+                          "textWeight": "font-light",
+                          "unit": ""
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc50x_data",
+                              "mapping": "gpio_input_1",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#3498db",
+                            "name": "GPIO 1",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 2,
+                          "row": 10,
+                          "sizeX": 2,
+                          "sizeY": 4
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "GPIO Input 2"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textSize": "50px",
+                          "textWeight": "font-light",
+                          "unit": ""
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc50x_data",
+                              "mapping": "gpio_input_2",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#3498db",
+                            "name": "GPIO 2",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 4,
+                          "row": 10,
+                          "sizeX": 2,
+                          "sizeY": 4
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "GPIO Output 1"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textSize": "50px",
+                          "textWeight": "font-light",
+                          "unit": ""
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc50x_data",
+                              "mapping": "gpio_output_1",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#e67e22",
+                            "name": "GPIO Out 1",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "Analog Inputs",
+                    "widgets": [
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 0,
+                          "sizeX": 3,
+                          "sizeY": 5
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Analog Input 1"
+                        },
+                        "properties": {
+                          "decimalPlaces": 3,
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textSize": "65px",
+                          "textWeight": "font-light",
+                          "unit": "V",
+                          "unitSize": "20px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc50x_data",
+                              "mapping": "analog_input_1",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#9b59b6",
+                            "name": "ADC 1",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 3,
+                          "row": 0,
+                          "sizeX": 3,
+                          "sizeY": 5
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Analog Input 2"
+                        },
+                        "properties": {
+                          "decimalPlaces": 3,
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textSize": "65px",
+                          "textWeight": "font-light",
+                          "unit": "V",
+                          "unitSize": "20px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc50x_data",
+                              "mapping": "analog_input_2",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#8e44ad",
+                            "name": "ADC 2",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 5,
+                          "sizeX": 6,
+                          "sizeY": 10
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Analog Inputs History (24h)"
+                        },
+                        "properties": {
+                          "alignTimeSeries": false,
+                          "dataAppend": false,
+                          "options": "var options = {\n    chart: {\n        type: 'line'\n    },\n    dataLabels: {\n        enabled: false\n    },\n    stroke: {\n        curve: 'smooth',\n        width: 2\n    },\n    xaxis: {\n        type: 'datetime',\n        labels: {\n            datetimeUTC: false\n        },\n        tooltip: {\n            enabled: false\n        }\n    },\n    yaxis: {\n        labels: {\n            formatter: function (val) {\n                if (val !== null && typeof val !== 'undefined')\n                    return val.toFixed(3);\n            }\n        }\n    },\n    tooltip: {\n        x: {\n            format: 'dd/MM/yyyy HH:mm:ss'\n        },\n        y: {\n            formatter: function (val) {\n                return val !== null ? val.toFixed(3) + ' V' : '';\n            }\n        }\n    }\n};\n",
+                          "realTimeUpdate": true
+                        },
+                        "sources": [
+                          {
+                            "aggregation": {},
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc50x_data",
+                              "mapping": "analog_input_1",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#9b59b6",
+                            "name": "Analog Input 1",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          },
+                          {
+                            "aggregation": {},
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc50x_data",
+                              "mapping": "analog_input_2",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#8e44ad",
+                            "name": "Analog Input 2",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          }
+                        ],
+                        "type": "apex_charts"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "Modbus & Serial",
+                    "widgets": [
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 0,
+                          "sizeX": 2,
+                          "sizeY": 5
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Modbus Channel 1"
+                        },
+                        "properties": {
+                          "decimalPlaces": 2,
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textSize": "55px",
+                          "textWeight": "font-light",
+                          "unit": "",
+                          "unitSize": "18px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc50x_data",
+                              "mapping": "modbus_chn_1",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#16a085",
+                            "name": "Modbus 1",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 2,
+                          "row": 0,
+                          "sizeX": 2,
+                          "sizeY": 5
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Modbus Channel 2"
+                        },
+                        "properties": {
+                          "decimalPlaces": 2,
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textSize": "55px",
+                          "textWeight": "font-light",
+                          "unit": "",
+                          "unitSize": "18px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc50x_data",
+                              "mapping": "modbus_chn_2",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#1abc9c",
+                            "name": "Modbus 2",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 4,
+                          "row": 0,
+                          "sizeX": 2,
+                          "sizeY": 5
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Modbus Channel 3"
+                        },
+                        "properties": {
+                          "decimalPlaces": 2,
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textSize": "55px",
+                          "textWeight": "font-light",
+                          "unit": "",
+                          "unitSize": "18px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc50x_data",
+                              "mapping": "modbus_chn_3",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#27ae60",
+                            "name": "Modbus 3",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 5,
+                          "sizeX": 6,
+                          "sizeY": 10
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Modbus Channels History (24h)"
+                        },
+                        "properties": {
+                          "alignTimeSeries": false,
+                          "dataAppend": false,
+                          "options": "var options = {\n    chart: {\n        type: 'line'\n    },\n    dataLabels: {\n        enabled: false\n    },\n    stroke: {\n        curve: 'smooth',\n        width: 2\n    },\n    xaxis: {\n        type: 'datetime',\n        labels: {\n            datetimeUTC: false\n        },\n        tooltip: {\n            enabled: false\n        }\n    },\n    yaxis: {\n        labels: {\n            formatter: function (val) {\n                if (val !== null && typeof val !== 'undefined')\n                    return val.toFixed(2);\n            }\n        }\n    },\n    tooltip: {\n        x: {\n            format: 'dd/MM/yyyy HH:mm:ss'\n        }\n    }\n};\n",
+                          "realTimeUpdate": true
+                        },
+                        "sources": [
+                          {
+                            "aggregation": {},
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc50x_data",
+                              "mapping": "modbus_chn_1",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#16a085",
+                            "name": "Modbus 1",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          },
+                          {
+                            "aggregation": {},
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc50x_data",
+                              "mapping": "modbus_chn_2",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#1abc9c",
+                            "name": "Modbus 2",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          },
+                          {
+                            "aggregation": {},
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc50x_data",
+                              "mapping": "modbus_chn_3",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#27ae60",
+                            "name": "Modbus 3",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          }
+                        ],
+                        "type": "apex_charts"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "Device Info",
+                    "widgets": [
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 0,
+                          "sizeX": 3,
+                          "sizeY": 4
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Firmware Version"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textSize": "45px",
+                          "textWeight": "font-light",
+                          "unit": ""
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc50x_data",
+                              "mapping": "firmware_version",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#34495e",
+                            "name": "Firmware",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 3,
+                          "row": 0,
+                          "sizeX": 3,
+                          "sizeY": 4
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Hardware Version"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textSize": "45px",
+                          "textWeight": "font-light",
+                          "unit": ""
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc50x_data",
+                              "mapping": "hardware_version",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#7f8c8d",
+                            "name": "Hardware",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 4,
+                          "sizeX": 6,
+                          "sizeY": 4
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Serial Number"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textSize": "35px",
+                          "textWeight": "font-light",
+                          "unit": ""
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc50x_data",
+                              "mapping": "sn",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#95a5a6",
+                            "name": "SN",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 8,
+                          "sizeX": 3,
+                          "sizeY": 4
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "LoRaWAN Class"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textSize": "40px",
+                          "textWeight": "font-light",
+                          "unit": ""
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc50x_data",
+                              "mapping": "lorawan_class",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#2980b9",
+                            "name": "Class",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 3,
+                          "row": 8,
+                          "sizeX": 3,
+                          "sizeY": 4
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Device Status"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textSize": "40px",
+                          "textWeight": "font-light",
+                          "unit": ""
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc50x_data",
+                              "mapping": "device_status",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#27ae60",
+                            "name": "Status",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
