@@ -1,0 +1,1164 @@
+{
+  "name": "milesight_iot_gs601",
+  "version": "1.0.0",
+  "description": "GS601 is a LoRaWAN® vape detector designed to identify vapingandsmoking events and send alerts. Equipped with a suite of powerful embedded sensors, GS601 simultaneously measures temperature, humidity, TVOC, and PM parameters",
+  "author": "Thinger.io",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thinger-io/plugins.git",
+    "directory": "milesight-iot-gs601"
+  },
+  "metadata": {
+    "name": "Milesight-Iot GS601",
+    "description": "GS601 is a LoRaWAN® vape detector designed to identify vapingandsmoking events and send alerts. Equipped with a suite of powerful embedded sensors, GS601 simultaneously measures temperature, humidity, TVOC, and PM parameters",
+    "image": "assets/gs601.png",
+    "category": "devices",
+    "vendor": "milesight-iot"
+  },
+  "resources": {
+    "products": [
+      {
+        "description": "GS601 is a LoRaWAN® vape detector designed to identify vapingandsmoking events and send alerts. Equipped with a suite of powerful embedded sensors, GS601 simultaneously measures temperature, humidity, TVOC, and PM parameters",
+        "enabled": true,
+        "name": "Milesight-Iot GS601",
+        "product": "milesight_iot_gs601",
+        "profile": {
+          "api": {
+            "downlink": {
+              "enabled": true,
+              "handle_connectivity": false,
+              "request": {
+                "data": {
+                  "path": "/downlink",
+                  "payload": "{\r\n    \"data\"    : \"{{payload.data=\"\"}}\",\r\n    \"port\"    :  {{payload.port=2}},\r\n    \"priority\":  {{payload.priority=3}},\r\n    \"confirmed\" :  {{payload.confirmed=false}},\r\n    \"uplink\"  :  {{property.uplink}} \r\n}",
+                  "payload_function": "",
+                  "payload_type": "",
+                  "plugin": "{{property.uplink.source}}",
+                  "target": "plugin_endpoint"
+                }
+              }
+            },
+            "uplink": {
+              "enabled": true,
+              "handle_connectivity": true,
+              "request": {
+                "data": {
+                  "payload": "{{payload}}",
+                  "payload_function": "",
+                  "payload_type": "source_payload",
+                  "resource_stream": "uplink",
+                  "target": "resource_stream"
+                }
+              }
+            }
+          },
+          "autoprovisions": {
+            "device_autoprovisioning": {
+              "config": {
+                "mode": "pattern",
+                "pattern": "gs601_.*"
+              },
+              "enabled": true
+            }
+          },
+          "buckets": {
+            "milesight_gs601_data": {
+              "backend": "mongodb",
+              "data": {
+                "payload": "{{payload}}",
+                "payload_function": "",
+                "payload_type": "source_payload",
+                "resource_stream": "uplink_decoded",
+                "source": "resource_stream"
+              },
+              "enabled": true,
+              "retention": {
+                "period": 3,
+                "unit": "months"
+              },
+              "tags": []
+            }
+          },
+          "code": {
+            "code": "function decodeThingerUplink(thingerData) {\n    // 0. If data has already been decoded, we will return it\n    if (thingerData.decodedPayload) return thingerData.decodedPayload;\n    \n    // 1. Extract and Validate Input\n    // We need 'payload' (hex string) and 'fPort' (integer)\n    const hexPayload = thingerData.payload || \"\";\n    const port = thingerData.fPort || 1;\n\n    // 2. Convert Hex String to Byte Array\n    const bytes = [];\n    for (let i = 0; i < hexPayload.length; i += 2) {\n        bytes.push(parseInt(hexPayload.substr(i, 2), 16));\n    }\n\n    // 3. Dynamic Function Detection and Execution\n    \n    // CASE A: (The Things Stack v3)\n    if (typeof decodeUplink === 'function') {\n        try {\n            const input = {\n                bytes: bytes,\n                fPort: port\n            };\n            var result = decodeUplink(input);\n            \n            if (result.data) return result.data;\n\n            return result; \n        } catch (e) {\n            console.error(\"Error inside decodeUplink:\", e);\n            throw e;\n        }\n    }\n\n    // CASE B: Legacy TTN (v2)\n    else if (typeof Decoder === 'function') {\n        try {\n            return Decoder(bytes, port);\n        } catch (e) {\n            console.error(\"Error inside Decoder:\", e);\n            throw e;\n        }\n    }\n\n    // CASE C: No decoder found\n    else {\n        throw new Error(\"No compatible TTN decoder function (decodeUplink or Decoder) found in scope.\");\n    }\n}\n\n\n// TTN decoder\nfunction decodeUplink(input) {\n    var res = Decoder(input.bytes, input.fPort);\n    if (res.error) {\n        return {\n            errors: [res.error],\n        };\n    }\n    return {\n        data: res,\n    };\n}\n/**\n * Payload Decoder\n *\n * Copyright 2025 Milesight IoT\n *\n * @product GS601\n */\nvar RAW_VALUE = 0x00;\n\n/* eslint no-redeclare: \"off\" */\n/* eslint-disable */\n// Chirpstack v4\nfunction decodeUplink(input) {\n    var decoded = milesightDeviceDecode(input.bytes);\n    return { data: decoded };\n}\n\n// Chirpstack v3\nfunction Decode(fPort, bytes) {\n    return milesightDeviceDecode(bytes);\n}\n\n// The Things Network\nfunction Decoder(bytes, port) {\n    return milesightDeviceDecode(bytes);\n}\n/* eslint-enable */\n\nfunction milesightDeviceDecode(bytes) {\n    var decoded = {};\n\n    var unknown_command = 0;\n    for (var i = 0; i < bytes.length; ) {\n        var command_id = bytes[i++];\n\n        switch (command_id) {\n            // attribute\n            case 0xdf:\n                decoded.tsl_version = readProtocolVersion(bytes.slice(i, i + 2));\n                i += 2;\n                break;\n            case 0xde:\n                decoded.product_name = readString(bytes.slice(i, i + 32));\n                i += 32;\n                break;\n            case 0xdd:\n                decoded.product_pn = readString(bytes.slice(i, i + 32));\n                i += 32;\n                break;\n            case 0xdb:\n                decoded.product_sn = readHexString(bytes.slice(i, i + 8));\n                i += 8;\n                break;\n            case 0xda:\n                decoded.version = {};\n                decoded.version.hardware_version = readHardwareVersion(bytes.slice(i, i + 2));\n                decoded.version.firmware_version = readFirmwareVersion(bytes.slice(i + 2, i + 8));\n                i += 8;\n                break;\n            case 0xd9:\n                decoded.oem_id = readHexString(bytes.slice(i, i + 2));\n                i += 2;\n                break;\n            case 0xd8:\n                decoded.product_frequency_band = readString(bytes.slice(i, i + 16));\n                i += 16;\n                break;\n            case 0xee:\n                decoded.device_request = 1;\n                i += 0;\n                break;\n            case 0xc8:\n                decoded.device_status = readDeviceStatus(bytes[i]);\n                i += 1;\n                break;\n            case 0xcf:\n                // skip 1 byte\n                decoded.lorawan_class = readLoRaWANClass(bytes[i + 1]);\n                i += 2;\n                break;\n\n            // telemetry\n            case 0x00:\n                decoded.battery = readUInt8(bytes[i]);\n                i += 1;\n                break;\n            case 0x01:\n                decoded.vaping_index = readUInt8(bytes[i]);\n                i += 1;\n                break;\n            case 0x02:\n                var vaping_index_alarm = {};\n                var alarm_type = bytes[i];\n\n                vaping_index_alarm.type = readVapeIndexAlarmType(alarm_type);\n                if (alarm_type === 0x10 || alarm_type === 0x11) {\n                    vaping_index_alarm.vaping_index = readUInt8(bytes[i + 1]);\n                    decoded.vaping_index = readUInt8(bytes[i + 1]);\n                    i += 2;\n                } else {\n                    i += 1;\n                }\n\n                decoded.vaping_index_alarm = vaping_index_alarm;\n                break;\n            case 0x03:\n                decoded.pm1_0 = readUInt16LE(bytes.slice(i, i + 2));\n                i += 2;\n                break;\n            case 0x04:\n                var pm1_0_alarm = {};\n                var alarm_type = bytes[i];\n\n                pm1_0_alarm.type = readPMAlarmType(alarm_type);\n                if (alarm_type === 0x10 || alarm_type === 0x11) {\n                    pm1_0_alarm.pm1_0 = readUInt16LE(bytes.slice(i + 1, i + 3));\n                    decoded.pm1_0 = readUInt16LE(bytes.slice(i + 1, i + 3));\n                    i += 3;\n                } else {\n                    i += 1;\n                }\n\n                decoded.pm1_0_alarm = pm1_0_alarm;\n                break;\n            case 0x05:\n                decoded.pm2_5 = readUInt16LE(bytes.slice(i, i + 2));\n                i += 2;\n                break;\n            case 0x06:\n                var pm2_5_alarm = {};\n                var alarm_type = bytes[i];\n\n                pm2_5_alarm.type = readPMAlarmType(alarm_type);\n                if (alarm_type === 0x10 || alarm_type === 0x11) {\n                    pm2_5_alarm.pm2_5 = readUInt16LE(bytes.slice(i + 1, i + 3));\n                    decoded.pm2_5 = readUInt16LE(bytes.slice(i + 1, i + 3));\n                    i += 3;\n                } else {\n                    i += 1;\n                }\n\n                decoded.pm2_5_alarm = pm2_5_alarm;\n                break;\n            case 0x07:\n                decoded.pm10 = readUInt16LE(bytes.slice(i, i + 2));\n                i += 2;\n                break;\n            case 0x08:\n                var pm10_alarm = {};\n                var alarm_type = bytes[i];\n\n                pm10_alarm.type = readPMAlarmType(alarm_type);\n                if (alarm_type === 0x10 || alarm_type === 0x11) {\n                    pm10_alarm.pm10 = readUInt16LE(bytes.slice(i + 1, i + 3));\n                    decoded.pm10 = readUInt16LE(bytes.slice(i + 1, i + 3));\n                    i += 3;\n                } else {\n                    i += 1;\n                }\n\n                decoded.pm10_alarm = pm10_alarm;\n                break;\n            case 0x09:\n                decoded.temperature = readInt16LE(bytes.slice(i, i + 2)) / 10;\n                i += 2;\n                break;\n            case 0x0a:\n                var temperature_alarm = {};\n                var alarm_type = bytes[i];\n\n                temperature_alarm.type = readTemperatureAlarmType(alarm_type);\n                if (alarm_type === 0x10 || alarm_type === 0x11) {\n                    temperature_alarm.temperature = readInt16LE(bytes.slice(i + 1, i + 3)) / 10;\n                    decoded.temperature = readInt16LE(bytes.slice(i + 1, i + 3)) / 10;\n                    i += 3;\n                } else {\n                    i += 1;\n                }\n\n                decoded.temperature_alarm = temperature_alarm;\n                break;\n            case 0x0b:\n                decoded.humidity = readUInt16LE(bytes.slice(i, i + 2)) / 10;\n                i += 2;\n                break;\n            case 0x0c:\n                var humidity_alarm = {};\n                var alarm_type = bytes[i];\n\n                humidity_alarm.type = readHumidityAlarmType(alarm_type);\n                i += 1;\n\n                decoded.humidity_alarm = humidity_alarm;\n                break;\n            case 0x0d:\n                decoded.tvoc = readUInt16LE(bytes.slice(i, i + 2));\n                i += 2;\n                break;\n            case 0x0e:\n                var tvoc_alarm = {};\n                var alarm_type = bytes[i];\n\n                tvoc_alarm.type = readTVOCAlarmType(alarm_type);\n                if (alarm_type === 0x10 || alarm_type === 0x11) {\n                    tvoc_alarm.tvoc = readUInt16LE(bytes.slice(i + 1, i + 3));\n                    decoded.tvoc = readUInt16LE(bytes.slice(i + 1, i + 3));\n                    i += 3;\n                } else {\n                    i += 1;\n                }\n\n                decoded.tvoc_alarm = tvoc_alarm;\n                break;\n            case 0x0f:\n                decoded.tamper_status = readTamperStatus(bytes[i]);\n                i += 1;\n                break;\n            case 0x10:\n                var tamper_status_alarm = {};\n                tamper_status_alarm.type = readTamperAlarmType(bytes[i]);\n                i += 1;\n\n                decoded.tamper_status_alarm = tamper_status_alarm;\n                break;\n            case 0x11:\n                decoded.buzzer = readBuzzerStatus(bytes[i]);\n                i += 1;\n                break;\n            case 0x12:\n                decoded.occupancy_status = readOccupancyStatus(bytes[i]);\n                i += 1;\n                break;\n            case 0x20:\n                decoded.tvoc_raw_data_1 = {};\n                decoded.tvoc_raw_data_1.rmox_0 = readFloatLE(bytes.slice(i, i + 4));\n                decoded.tvoc_raw_data_1.rmox_1 = readFloatLE(bytes.slice(i + 4, i + 8));\n                i += 8;\n                break;\n            case 0x21:\n                decoded.tvoc_raw_data_2 = {};\n                decoded.tvoc_raw_data_2.rmox_2 = readFloatLE(bytes.slice(i, i + 4));\n                decoded.tvoc_raw_data_2.rmox_3 = readFloatLE(bytes.slice(i + 4, i + 8));\n                i += 8;\n                break;\n            case 0x22:\n                decoded.tvoc_raw_data_3 = {};\n                decoded.tvoc_raw_data_3.rmox_4 = readFloatLE(bytes.slice(i, i + 4));\n                decoded.tvoc_raw_data_3.rmox_5 = readFloatLE(bytes.slice(i + 4, i + 8));\n                i += 8;\n                break;\n            case 0x23:\n                decoded.tvoc_raw_data_4 = {};\n                decoded.tvoc_raw_data_4.rmox_6 = readFloatLE(bytes.slice(i, i + 4));\n                decoded.tvoc_raw_data_4.rmox_7 = readFloatLE(bytes.slice(i + 4, i + 8));\n                i += 8;\n                break;\n            case 0x24:\n                decoded.tvoc_raw_data_5 = {};\n                decoded.tvoc_raw_data_5.rmox_8 = readFloatLE(bytes.slice(i, i + 4));\n                decoded.tvoc_raw_data_5.rmox_9 = readFloatLE(bytes.slice(i + 4, i + 8));\n                i += 8;\n                break;\n            case 0x25:\n                decoded.tvoc_raw_data_6 = {};\n                decoded.tvoc_raw_data_6.rmox_10 = readFloatLE(bytes.slice(i, i + 4));\n                decoded.tvoc_raw_data_6.rmox_11 = readFloatLE(bytes.slice(i + 4, i + 8));\n                i += 8;\n                break;\n            case 0x26:\n                decoded.tvoc_raw_data_7 = {};\n                decoded.tvoc_raw_data_7.rmox_12 = readFloatLE(bytes.slice(i, i + 4));\n                decoded.tvoc_raw_data_7.zmod4510_rmox_3 = readFloatLE(bytes.slice(i + 4, i + 8));\n                i += 8;\n                break;\n            case 0x27:\n                decoded.tvoc_raw_data_8 = {};\n                decoded.tvoc_raw_data_8.log_rcda = readFloatLE(bytes.slice(i, i + 4));\n                decoded.tvoc_raw_data_8.rhtr = readFloatLE(bytes.slice(i + 4, i + 8));\n                i += 8;\n                break;\n            case 0x28:\n                decoded.tvoc_raw_data_9 = {};\n                decoded.tvoc_raw_data_9.temperature = readFloatLE(bytes.slice(i, i + 4));\n                decoded.tvoc_raw_data_9.iaq = readFloatLE(bytes.slice(i + 4, i + 8));\n                i += 8;\n                break;\n            case 0x29:\n                decoded.tvoc_raw_data_10 = {};\n                decoded.tvoc_raw_data_10.tvoc = readFloatLE(bytes.slice(i, i + 4));\n                decoded.tvoc_raw_data_10.etoh = readFloatLE(bytes.slice(i + 4, i + 8));\n                i += 8;\n                break;\n            case 0x2a:\n                decoded.tvoc_raw_data_11 = {};\n                decoded.tvoc_raw_data_11.eco2 = readFloatLE(bytes.slice(i, i + 4));\n                decoded.tvoc_raw_data_11.rel_iaq = readFloatLE(bytes.slice(i + 4, i + 8));\n                i += 8;\n                break;\n            case 0x2b:\n                decoded.pm_sensor_working_time = readUInt32LE(bytes.slice(i, i + 4));\n                i += 4;\n                break;\n\n            // config\n            case 0x60:\n                var time_unit = readUInt8(bytes[i]);\n                decoded.reporting_interval = {};\n                decoded.reporting_interval.unit = readTimeUnitType(time_unit);\n                if (time_unit === 0) {\n                    decoded.reporting_interval.seconds_of_time = readUInt16LE(bytes.slice(i + 1, i + 3));\n                } else if (time_unit === 1) {\n                    decoded.reporting_interval.minutes_of_time = readUInt16LE(bytes.slice(i + 1, i + 3));\n                }\n                i += 3;\n                break;\n            case 0x61:\n                decoded.temperature_unit = readTemperatureType(bytes[i]);\n                i += 1;\n                break;\n            case 0x62:\n                decoded.led_status = readEnableStatus(bytes[i]);\n                i += 1;\n                break;\n            case 0x63:\n                decoded.buzzer_enable = readEnableStatus(bytes[i]);\n                i += 1;\n                break;\n            case 0x64:\n                var index = readUInt8(bytes[i]);\n                var buzzer_sleep = {};\n                buzzer_sleep.enable = readEnableStatus(bytes[i + 1]);\n                buzzer_sleep.start_time = readUInt16LE(bytes.slice(i + 2, i + 4));\n                buzzer_sleep.end_time = readUInt16LE(bytes.slice(i + 4, i + 6));\n                i += 6;\n                decoded.buzzer_sleep = decoded.buzzer_sleep || {};\n                decoded.buzzer_sleep[\"item_\" + index] = buzzer_sleep;\n                break;\n            case 0x65:\n                decoded.buzzer_button_stop_enable = readEnableStatus(bytes[i]);\n                i += 1;\n                break;\n            case 0x66:\n                decoded.buzzer_silent_time = readUInt16LE(bytes.slice(i, i + 2));\n                i += 2;\n                break;\n            case 0x67:\n                decoded.tamper_alarm_enable = readEnableStatus(bytes[i]);\n                i += 1;\n                break;\n            case 0x68:\n                decoded.tvoc_raw_reporting_enable = readEnableStatus(bytes[i]);\n                i += 1;\n                break;\n            case 0x69:\n                decoded.temperature_alarm_settings = {};\n                decoded.temperature_alarm_settings.enable = readEnableStatus(bytes[i]);\n                decoded.temperature_alarm_settings.condition = readThresholdCondition(bytes[i + 1]);\n                decoded.temperature_alarm_settings.threshold_min = readInt16LE(bytes.slice(i + 2, i + 4)) / 10;\n                decoded.temperature_alarm_settings.threshold_max = readInt16LE(bytes.slice(i + 4, i + 6)) / 10;\n                i += 6;\n                break;\n            case 0x6a:\n                decoded.pm1_0_alarm_settings = {};\n                decoded.pm1_0_alarm_settings.enable = readEnableStatus(bytes[i]);\n                // decoded.pm1_0_alarm_settings.condition = readThresholdCondition(bytes[i + 1]);\n                // decoded.pm1_0_alarm_settings.threshold_min = readInt16LE(bytes.slice(i + 2, i + 4));\n                decoded.pm1_0_alarm_settings.threshold_max = readInt16LE(bytes.slice(i + 4, i + 6));\n                i += 6;\n                break;\n            case 0x6b:\n                decoded.pm2_5_alarm_settings = {};\n                decoded.pm2_5_alarm_settings.enable = readEnableStatus(bytes[i]);\n                // decoded.pm2_5_alarm_settings.condition = readThresholdCondition(bytes[i + 1]);\n                // decoded.pm2_5_alarm_settings.threshold_min = readInt16LE(bytes.slice(i + 2, i + 4));\n                decoded.pm2_5_alarm_settings.threshold_max = readInt16LE(bytes.slice(i + 4, i + 6));\n                i += 6;\n                break;\n            case 0x6c:\n                decoded.pm10_alarm_settings = {};\n                decoded.pm10_alarm_settings.enable = readEnableStatus(bytes[i]);\n                // decoded.pm10_alarm_settings.condition = readThresholdCondition(bytes[i + 1]);\n                // decoded.pm10_alarm_settings.threshold_min = readInt16LE(bytes.slice(i + 2, i + 4));\n                decoded.pm10_alarm_settings.threshold_max = readInt16LE(bytes.slice(i + 4, i + 6));\n                i += 6;\n                break;\n            case 0x6d:\n                decoded.tvoc_alarm_settings = {};\n                decoded.tvoc_alarm_settings.enable = readEnableStatus(bytes[i]);\n                // decoded.tvoc_alarm_settings.condition = readThresholdCondition(bytes[i + 1]);\n                // decoded.tvoc_alarm_settings.threshold_min = readInt16LE(bytes.slice(i + 2, i + 4));\n                decoded.tvoc_alarm_settings.threshold_max = readInt16LE(bytes.slice(i + 4, i + 6));\n                i += 6;\n                break;\n            case 0x6e:\n                decoded.vaping_index_alarm_settings = {};\n                decoded.vaping_index_alarm_settings.enable = readEnableStatus(bytes[i]);\n                // decoded.vaping_index_alarm_settings.condition = readThresholdCondition(bytes[i + 1]);\n                // decoded.vaping_index_alarm_settings.threshold_min = readUInt8(bytes[i + 2]);\n                decoded.vaping_index_alarm_settings.threshold_max = readUInt8(bytes[i + 3]);\n                i += 4;\n                break;\n            case 0x6f:\n                decoded.alarm_reporting_times = readUInt16LE(bytes.slice(i, i + 2));\n                i += 2;\n                break;\n            case 0x70:\n                decoded.alarm_deactivation_enable = readEnableStatus(bytes[i]);\n                i += 1;\n                break;\n            case 0x71:\n                decoded.temperature_calibration_settings = {};\n                decoded.temperature_calibration_settings.enable = readEnableStatus(bytes[i]);\n                decoded.temperature_calibration_settings.calibration_value = readInt16LE(bytes.slice(i + 1, i + 3)) / 10;\n                i += 3;\n                break;\n            case 0x72:\n                decoded.humidity_calibration_settings = {};\n                decoded.humidity_calibration_settings.enable = readEnableStatus(bytes[i]);\n                decoded.humidity_calibration_settings.calibration_value = readInt16LE(bytes.slice(i + 1, i + 3)) / 10;\n                i += 3;\n                break;\n            case 0x73:\n                decoded.pm1_0_calibration_settings = {};\n                decoded.pm1_0_calibration_settings.enable = readEnableStatus(bytes[i]);\n                decoded.pm1_0_calibration_settings.calibration_value = readInt16LE(bytes.slice(i + 1, i + 3));\n                i += 3;\n                break;\n            case 0x74:\n                decoded.pm2_5_calibration_settings = {};\n                decoded.pm2_5_calibration_settings.enable = readEnableStatus(bytes[i]);\n                decoded.pm2_5_calibration_settings.calibration_value = readInt16LE(bytes.slice(i + 1, i + 3));\n                i += 3;\n                break;\n            case 0x75:\n                decoded.pm10_calibration_settings = {};\n                decoded.pm10_calibration_settings.enable = readEnableStatus(bytes[i]);\n                decoded.pm10_calibration_settings.calibration_value = readInt16LE(bytes.slice(i + 1, i + 3));\n                i += 3;\n                break;\n            case 0x76:\n                decoded.tvoc_calibration_settings = {};\n                decoded.tvoc_calibration_settings.enable = readEnableStatus(bytes[i]);\n                decoded.tvoc_calibration_settings.calibration_value = readInt16LE(bytes.slice(i + 1, i + 3));\n                i += 3;\n                break;\n            case 0x77:\n                decoded.vaping_index_calibration_settings = {};\n                decoded.vaping_index_calibration_settings.enable = readEnableStatus(bytes[i]);\n                decoded.vaping_index_calibration_settings.calibration_value = readInt8(bytes[i + 1]);\n                i += 2;\n                break;\n            case 0xc6:\n                decoded.daylight_saving_time = {};\n                decoded.daylight_saving_time.daylight_saving_time_enable = readEnableStatus(bytes[i]);\n                decoded.daylight_saving_time.daylight_saving_time_offset = readUInt8(bytes[i + 1]);\n                decoded.daylight_saving_time.start_month = readUInt8(bytes[i + 2]);\n                var start_day_value = readUInt8(bytes[i + 3]);\n                decoded.daylight_saving_time.start_week_num = (start_day_value >>> 4) & 0x07;\n                decoded.daylight_saving_time.start_week_day = start_day_value & 0x0f;\n                decoded.daylight_saving_time.start_hour_min = readUInt16LE(bytes.slice(i + 4, i + 6));\n                decoded.daylight_saving_time.end_month = readUInt8(bytes[i + 6]);\n                var end_day_value = readUInt8(bytes[i + 7]);\n                decoded.daylight_saving_time.end_week_num = (end_day_value >>> 4) & 0x0f;\n                decoded.daylight_saving_time.end_week_day = end_day_value & 0x0f;\n                decoded.daylight_saving_time.end_hour_min = readUInt16LE(bytes.slice(i + 8, i + 10));\n                i += 10;\n                break;\n            case 0xc7:\n                decoded.time_zone = readTimeZone(readInt16LE(bytes.slice(i, i + 2)));\n                i += 2;\n                break;\n\n            // service\n            case 0x5f:\n                decoded.stop_buzzer_alarm = readYesNoStatus(1);\n                break;\n            case 0x5e:\n                decoded.execute_tvoc_self_clean = readYesNoStatus(1);\n                break;\n            case 0xb6:\n                decoded.reconnect = readYesNoStatus(1);\n                break;\n            case 0xb8:\n                decoded.synchronize_time = readYesNoStatus(1);\n                break;\n            case 0xb9:\n                decoded.query_device_status = readYesNoStatus(1);\n                break;\n            case 0xbe:\n                decoded.reboot = readYesNoStatus(1);\n                break;\n            // control frame\n            case 0xef:\n                var cmd_data = readUInt8(bytes[i]);\n                var cmd_result = (cmd_data >>> 4) & 0x0f;\n                var cmd_length = cmd_data & 0x0f;\n                var cmd_id = readHexString(bytes.slice(i + 1, i + 1 + cmd_length));\n                var cmd_header = readHexString(bytes.slice(i + 1, i + 2));\n                i += 1 + cmd_length;\n\n                var response = {};\n                response.result = readCmdResult(cmd_result);\n                response.cmd_id = cmd_id;\n                response.cmd_name = readCmdName(cmd_header);\n\n                decoded.request_result = decoded.request_result || [];\n                decoded.request_result.push(response);\n                break;\n            case 0xfe:\n                decoded.frame = readUInt8(bytes[i]);\n                i += 1;\n                break;\n            default:\n                unknown_command = 1;\n                break;\n        }\n\n        if (unknown_command) {\n            throw new Error(\"unknown command: \" + command_id);\n        }\n    }\n\n    return decoded;\n}\n\nfunction readProtocolVersion(bytes) {\n    var major = bytes[0] & 0xff;\n    var minor = bytes[1] & 0xff;\n    return \"v\" + major + \".\" + minor;\n}\n\nfunction readHardwareVersion(bytes) {\n    var major = bytes[0] & 0xff;\n    var minor = bytes[1] & 0xff;\n    return \"v\" + major + \".\" + minor;\n}\n\nfunction readFirmwareVersion(bytes) {\n    var major = bytes[0] & 0xff;\n    var minor = bytes[1] & 0xff;\n    var release = bytes[2] & 0xff;\n    var alpha = bytes[3] & 0xff;\n    var unit_test = bytes[4] & 0xff;\n    var test = bytes[5] & 0xff;\n\n    var version = \"v\" + major + \".\" + minor;\n    if (release !== 0) version += \"-r\" + release;\n    if (alpha !== 0) version += \"-a\" + alpha;\n    if (unit_test !== 0) version += \"-u\" + unit_test;\n    if (test !== 0) version += \"-t\" + test;\n    return version;\n}\n\nfunction readDeviceStatus(type) {\n    var device_status_map = { 0: \"off\", 1: \"on\" };\n    return getValue(device_status_map, type);\n}\n\nfunction readLoRaWANClass(type) {\n    var lorawan_class_map = {\n        0: \"Class A\",\n        1: \"Class B\",\n        2: \"Class C\",\n        3: \"Class CtoB\",\n    };\n    return getValue(lorawan_class_map, type);\n}\n\nfunction readVapeIndexAlarmType(type) {\n    var vape_index_alarm_map = {\n        0: \"collection error\", // 0x00\n        1: \"lower range error\", // 0x01\n        2: \"over range error\", // 0x02\n        16: \"alarm deactivation\", // 0x10\n        17: \"alarm trigger\", // 0x11\n        32: \"interference alarm deactivation\", // 0x20\n        33: \"interference alarm trigger\", // 0x21\n    };\n    return getValue(vape_index_alarm_map, type);\n}\n\nfunction readPMAlarmType(type) {\n    var pm_alarm_map = {\n        0: \"collection error\", // 0x00\n        1: \"lower range error\", // 0x01\n        2: \"over range error\", // 0x02\n        16: \"alarm deactivation\", // 0x10\n        17: \"alarm trigger\", // 0x11\n    };\n    return getValue(pm_alarm_map, type);\n}\n\nfunction readTemperatureAlarmType(type) {\n    var temperature_alarm_map = {\n        0: \"collection error\", // 0x00\n        1: \"lower range error\", // 0x01\n        2: \"over range error\", // 0x02\n        16: \"alarm deactivation\", // 0x10\n        17: \"alarm trigger\", // 0x11\n        32: \"burning alarm deactivation\", // 0x20\n        33: \"burning alarm trigger\", // 0x21\n    };\n    return getValue(temperature_alarm_map, type);\n}\n\nfunction readHumidityAlarmType(type) {\n    var humidity_alarm_map = {\n        0: \"collection error\", // 0x00\n        1: \"lower range error\", // 0x01\n        2: \"over range error\", // 0x02\n    };\n    return getValue(humidity_alarm_map, type);\n}\n\nfunction readTVOCAlarmType(type) {\n    var tvoc_alarm_map = {\n        0: \"collection error\", // 0x00\n        1: \"lower range error\", // 0x01\n        2: \"over range error\", // 0x02\n        16: \"alarm deactivation\", // 0x10\n        17: \"alarm trigger\", // 0x11\n    };\n    return getValue(tvoc_alarm_map, type);\n}\n\nfunction readTamperStatus(type) {\n    var tamper_status_map = { 0: \"normal\", 1: \"triggered\" };\n    return getValue(tamper_status_map, type);\n}\n\nfunction readTamperAlarmType(type) {\n    var tamper_alarm_map = {\n        32: \"alarm deactivation\", // 0x20\n        33: \"alarm trigger\", // 0x21\n    };\n    return getValue(tamper_alarm_map, type);\n}\n\nfunction readBuzzerStatus(type) {\n    var buzzer_status_map = { 0: \"normal\", 1: \"triggered\" };\n    return getValue(buzzer_status_map, type);\n}\n\nfunction readOccupancyStatus(type) {\n    var occupancy_status_map = { 0: \"vacant\", 1: \"occupied\" };\n    return getValue(occupancy_status_map, type);\n}\n\nfunction readTimeUnitType(type) {\n    var unit_map = { 0: \"second\", 1: \"minute\" };\n    return getValue(unit_map, type);\n}\n\nfunction readTemperatureType(type) {\n    var unit_map = { 0: \"celsius\", 1: \"fahrenheit\" };\n    return getValue(unit_map, type);\n}\n\nfunction readEnableStatus(status) {\n    var status_map = { 0: \"disable\", 1: \"enable\" };\n    return getValue(status_map, status);\n}\n\nfunction readYesNoStatus(type) {\n    var yes_no_map = { 0: \"no\", 1: \"yes\" };\n    return getValue(yes_no_map, type);\n}\n\nfunction readThresholdCondition(type) {\n    var condition_map = { 0: \"disable\", 1: \"below\", 2: \"above\", 3: \"between\", 4: \"outside\" };\n    return getValue(condition_map, type);\n}\n\nfunction readTimeZone(time_zone) {\n    var timezone_map = { \"-720\": \"UTC-12\", \"-660\": \"UTC-11\", \"-600\": \"UTC-10\", \"-570\": \"UTC-9:30\", \"-540\": \"UTC-9\", \"-480\": \"UTC-8\", \"-420\": \"UTC-7\", \"-360\": \"UTC-6\", \"-300\": \"UTC-5\", \"-240\": \"UTC-4\", \"-210\": \"UTC-3:30\", \"-180\": \"UTC-3\", \"-120\": \"UTC-2\", \"-60\": \"UTC-1\", 0: \"UTC\", 60: \"UTC+1\", 120: \"UTC+2\", 180: \"UTC+3\", 210: \"UTC+3:30\", 240: \"UTC+4\", 270: \"UTC+4:30\", 300: \"UTC+5\", 330: \"UTC+5:30\", 345: \"UTC+5:45\", 360: \"UTC+6\", 390: \"UTC+6:30\", 420: \"UTC+7\", 480: \"UTC+8\", 540: \"UTC+9\", 570: \"UTC+9:30\", 600: \"UTC+10\", 630: \"UTC+10:30\", 660: \"UTC+11\", 720: \"UTC+12\", 765: \"UTC+12:45\", 780: \"UTC+13\", 840: \"UTC+14\" };\n    return getValue(timezone_map, time_zone);\n}\n\nfunction readCmdResult(type) {\n    var result_map = { 0: \"success\", 1: \"parsing error\", 2: \"order error\", 3: \"password error\", 4: \"read params error\", 5: \"write params error\", 6: \"read execution error\", 7: \"write execution error\", 8: \"read apply error\", 9: \"write apply error\", 10: \"associative error\" };\n    return getValue(result_map, type);\n}\n\nfunction readCmdName(type) {\n    var name_map = {\n        60: { level: 1, name: \"reporting_interval\" },\n        61: { level: 1, name: \"temperature_unit\" },\n        62: { level: 1, name: \"led_status\" },\n        63: { level: 1, name: \"buzzer_enable\" },\n        64: { level: 1, name: \"buzzer_sleep\" },\n        65: { level: 1, name: \"buzzer_button_stop_enable\" },\n        66: { level: 1, name: \"buzzer_silent_time\" },\n        67: { level: 1, name: \"tamper_alarm_enable\" },\n        68: { level: 1, name: \"tvoc_raw_reporting_enable\" },\n        69: { level: 1, name: \"temperature_alarm_settings\" },\n        \"6a\": { level: 1, name: \"pm1_0_alarm_settings\" },\n        \"6b\": { level: 1, name: \"pm2_5_alarm_settings\" },\n        \"6c\": { level: 1, name: \"pm10_alarm_settings\" },\n        \"6d\": { level: 1, name: \"tvoc_alarm_settings\" },\n        \"6e\": { level: 1, name: \"vaping_index_alarm_settings\" },\n        \"6f\": { level: 1, name: \"alarm_reporting_times\" },\n        70: { level: 1, name: \"alarm_deactivation_enable\" },\n        71: { level: 1, name: \"temperature_calibration_settings\" },\n        72: { level: 1, name: \"humidity_calibration_settings\" },\n        73: { level: 1, name: \"pm1_0_calibration_settings\" },\n        74: { level: 1, name: \"pm2_5_calibration_settings\" },\n        75: { level: 1, name: \"pm10_calibration_settings\" },\n        76: { level: 1, name: \"tvoc_calibration_settings\" },\n        77: { level: 1, name: \"vaping_index_calibration_settings\" },\n        c6: { level: 1, name: \"daylight_saving_time\" },\n        c7: { level: 1, name: \"time_zone\" },\n        be: { level: 1, name: \"reboot\" },\n        b6: { level: 0, name: \"reconnect\" },\n        b8: { level: 0, name: \"synchronize_time\" },\n        b9: { level: 0, name: \"query_device_status\" },\n        \"5f\": { level: 0, name: \"stop_buzzer_alarm\" },\n        \"5e\": { level: 0, name: \"execute_tvoc_self_clean\" },\n    };\n\n    var data = name_map[type];\n    if (data === undefined) return \"unknown\";\n    return data.name;\n}\n\n/* eslint-disable */\nfunction readUInt8(bytes) {\n    return bytes & 0xff;\n}\n\nfunction readInt8(bytes) {\n    var ref = readUInt8(bytes);\n    return ref > 0x7f ? ref - 0x100 : ref;\n}\n\nfunction readUInt16LE(bytes) {\n    var value = (bytes[1] << 8) + bytes[0];\n    return value & 0xffff;\n}\n\nfunction readInt16LE(bytes) {\n    var ref = readUInt16LE(bytes);\n    return ref > 0x7fff ? ref - 0x10000 : ref;\n}\n\nfunction readUInt32LE(bytes) {\n    var value = (bytes[3] << 24) + (bytes[2] << 16) + (bytes[1] << 8) + bytes[0];\n    return (value & 0xffffffff) >>> 0;\n}\n\nfunction readInt32LE(bytes) {\n    var ref = readUInt32LE(bytes);\n    return ref > 0x7fffffff ? ref - 0x100000000 : ref;\n}\n\nfunction readFloat16LE(bytes) {\n    var bits = (bytes[1] << 8) | bytes[0];\n    var sign = bits >>> 15 === 0 ? 1.0 : -1.0;\n    var e = (bits >>> 10) & 0x1f;\n    var m = e === 0 ? (bits & 0x3ff) << 1 : (bits & 0x3ff) | 0x400;\n    var f = sign * m * Math.pow(2, e - 25);\n\n    var n = Number(f.toFixed(2));\n    return n;\n}\n\nfunction readFloatLE(bytes) {\n    var bits = (bytes[3] << 24) | (bytes[2] << 16) | (bytes[1] << 8) | bytes[0];\n    var sign = bits >>> 31 === 0 ? 1.0 : -1.0;\n    var e = (bits >>> 23) & 0xff;\n    var m = e === 0 ? (bits & 0x7fffff) << 1 : (bits & 0x7fffff) | 0x800000;\n    var f = sign * m * Math.pow(2, e - 150);\n    return Number(f.toFixed(3));\n}\n\nfunction readString(bytes) {\n    var str = \"\";\n    var i = 0;\n    var byte1, byte2, byte3, byte4;\n    while (i < bytes.length) {\n        byte1 = bytes[i++];\n        if (byte1 <= 0x7f) {\n            str += String.fromCharCode(byte1);\n        } else if (byte1 <= 0xdf) {\n            byte2 = bytes[i++];\n            str += String.fromCharCode(((byte1 & 0x1f) << 6) | (byte2 & 0x3f));\n        } else if (byte1 <= 0xef) {\n            byte2 = bytes[i++];\n            byte3 = bytes[i++];\n            str += String.fromCharCode(((byte1 & 0x0f) << 12) | ((byte2 & 0x3f) << 6) | (byte3 & 0x3f));\n        } else if (byte1 <= 0xf7) {\n            byte2 = bytes[i++];\n            byte3 = bytes[i++];\n            byte4 = bytes[i++];\n            var codepoint = ((byte1 & 0x07) << 18) | ((byte2 & 0x3f) << 12) | ((byte3 & 0x3f) << 6) | (byte4 & 0x3f);\n            codepoint -= 0x10000;\n            str += String.fromCharCode((codepoint >> 10) + 0xd800);\n            str += String.fromCharCode((codepoint & 0x3ff) + 0xdc00);\n        }\n    }\n    return str;\n}\n\nfunction readHexString(bytes) {\n    var temp = [];\n    for (var idx = 0; idx < bytes.length; idx++) {\n        temp.push((\"0\" + (bytes[idx] & 0xff).toString(16)).slice(-2));\n    }\n    return temp.join(\"\");\n}\n\nfunction getValue(map, key) {\n    if (RAW_VALUE) return key;\n    var value = map[key];\n    if (!value) value = \"unknown\";\n    return value;\n}\n",
+            "environment": "javascript",
+            "storage": "",
+            "version": "1.0"
+          },
+          "flows": {
+            "milesight_gs601_decoder": {
+              "data": {
+                "payload": "{{payload}}",
+                "payload_function": "decodeThingerUplink",
+                "payload_type": "source_payload",
+                "resource": "uplink",
+                "source": "resource",
+                "update": "events"
+              },
+              "enabled": true,
+              "sink": {
+                "payload": "{{payload}}",
+                "payload_function": "",
+                "payload_type": "source_payload",
+                "resource_stream": "uplink_decoded",
+                "target": "resource_stream"
+              },
+              "split_data": false
+            }
+          },
+          "properties": {
+            "uplink": {
+              "data": {
+                "payload": "{{payload}}",
+                "payload_function": "",
+                "payload_type": "source_payload",
+                "resource": "uplink",
+                "source": "resource",
+                "update": "events"
+              },
+              "default": {
+                "source": "value"
+              },
+              "enabled": true
+            }
+          }
+        },
+        "_resources": {
+          "properties": [
+            {
+              "property": "dashboard",
+              "value": {
+                "tabs": [
+                  {
+                    "name": "Overview",
+                    "widgets": [
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 0,
+                          "sizeX": 2,
+                          "sizeY": 4
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Vaping Index"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "enableExtraTextColor": false,
+                          "enableIconColor": false,
+                          "enableIconSize": false,
+                          "extraText": "",
+                          "extraTextColor": "#1E313E",
+                          "extraTextColorConditions": [],
+                          "extraTextConditions": [],
+                          "extraTextPosition": "above-value",
+                          "extraTextSize": "20px",
+                          "extraTextWeight": "font-light",
+                          "icon": "",
+                          "iconColor": "#1E313E",
+                          "iconColorConditions": [],
+                          "iconConditions": [],
+                          "iconGap": "8px",
+                          "iconPosition": "before-value",
+                          "iconSize": "75px",
+                          "iconVerticalOffset": "0px",
+                          "link": "",
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textColorConditions": [],
+                          "textSize": "60px",
+                          "textWeight": "font-light",
+                          "unit": "",
+                          "unitSize": "20px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_gs601_data",
+                              "mapping": "vaping_index",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#1abc9c",
+                            "name": "Vaping Index",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 2,
+                          "row": 0,
+                          "sizeX": 2,
+                          "sizeY": 4
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Temperature"
+                        },
+                        "properties": {
+                          "decimalPlaces": 1,
+                          "enableExtraTextColor": false,
+                          "enableIconColor": false,
+                          "enableIconSize": false,
+                          "extraText": "",
+                          "extraTextColor": "#1E313E",
+                          "extraTextColorConditions": [],
+                          "extraTextConditions": [],
+                          "extraTextPosition": "above-value",
+                          "extraTextSize": "20px",
+                          "extraTextWeight": "font-light",
+                          "icon": "",
+                          "iconColor": "#1E313E",
+                          "iconColorConditions": [],
+                          "iconConditions": [],
+                          "iconGap": "8px",
+                          "iconPosition": "before-value",
+                          "iconSize": "75px",
+                          "iconVerticalOffset": "0px",
+                          "link": "",
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textColorConditions": [],
+                          "textSize": "60px",
+                          "textWeight": "font-light",
+                          "unit": "°C",
+                          "unitSize": "20px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_gs601_data",
+                              "mapping": "temperature",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#e74c3c",
+                            "name": "Temperature",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 4,
+                          "row": 0,
+                          "sizeX": 2,
+                          "sizeY": 4
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Humidity"
+                        },
+                        "properties": {
+                          "decimalPlaces": 1,
+                          "enableExtraTextColor": false,
+                          "enableIconColor": false,
+                          "enableIconSize": false,
+                          "extraText": "",
+                          "extraTextColor": "#1E313E",
+                          "extraTextColorConditions": [],
+                          "extraTextConditions": [],
+                          "extraTextPosition": "above-value",
+                          "extraTextSize": "20px",
+                          "extraTextWeight": "font-light",
+                          "icon": "",
+                          "iconColor": "#1E313E",
+                          "iconColorConditions": [],
+                          "iconConditions": [],
+                          "iconGap": "8px",
+                          "iconPosition": "before-value",
+                          "iconSize": "75px",
+                          "iconVerticalOffset": "0px",
+                          "link": "",
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textColorConditions": [],
+                          "textSize": "60px",
+                          "textWeight": "font-light",
+                          "unit": "%",
+                          "unitSize": "20px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_gs601_data",
+                              "mapping": "humidity",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#3498db",
+                            "name": "Humidity",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 4,
+                          "sizeX": 2,
+                          "sizeY": 4
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "TVOC"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "enableExtraTextColor": false,
+                          "enableIconColor": false,
+                          "enableIconSize": false,
+                          "extraText": "",
+                          "extraTextColor": "#1E313E",
+                          "extraTextColorConditions": [],
+                          "extraTextConditions": [],
+                          "extraTextPosition": "above-value",
+                          "extraTextSize": "20px",
+                          "extraTextWeight": "font-light",
+                          "icon": "",
+                          "iconColor": "#1E313E",
+                          "iconColorConditions": [],
+                          "iconConditions": [],
+                          "iconGap": "8px",
+                          "iconPosition": "before-value",
+                          "iconSize": "75px",
+                          "iconVerticalOffset": "0px",
+                          "link": "",
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textColorConditions": [],
+                          "textSize": "60px",
+                          "textWeight": "font-light",
+                          "unit": "ppb",
+                          "unitSize": "20px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_gs601_data",
+                              "mapping": "tvoc",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#9b59b6",
+                            "name": "TVOC",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 2,
+                          "row": 4,
+                          "sizeX": 2,
+                          "sizeY": 4
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "PM 2.5"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "enableExtraTextColor": false,
+                          "enableIconColor": false,
+                          "enableIconSize": false,
+                          "extraText": "",
+                          "extraTextColor": "#1E313E",
+                          "extraTextColorConditions": [],
+                          "extraTextConditions": [],
+                          "extraTextPosition": "above-value",
+                          "extraTextSize": "20px",
+                          "extraTextWeight": "font-light",
+                          "icon": "",
+                          "iconColor": "#1E313E",
+                          "iconColorConditions": [],
+                          "iconConditions": [],
+                          "iconGap": "8px",
+                          "iconPosition": "before-value",
+                          "iconSize": "75px",
+                          "iconVerticalOffset": "0px",
+                          "link": "",
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textColorConditions": [],
+                          "textSize": "60px",
+                          "textWeight": "font-light",
+                          "unit": "µg/m³",
+                          "unitSize": "20px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_gs601_data",
+                              "mapping": "pm2_5",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#f39c12",
+                            "name": "PM 2.5",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 4,
+                          "row": 4,
+                          "sizeX": 2,
+                          "sizeY": 4
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Battery"
+                        },
+                        "properties": {
+                          "color": "#2ebd59",
+                          "gradient": false,
+                          "max": 100,
+                          "min": 0,
+                          "unit": "%"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_gs601_data",
+                              "mapping": "battery",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#2ebd59",
+                            "name": "Battery",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "gauge"
+                      },
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 8,
+                          "sizeX": 6,
+                          "sizeY": 8
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Air Quality Trends (24h)"
+                        },
+                        "properties": {
+                          "alignTimeSeries": false,
+                          "dataAppend": false,
+                          "options": "var options = {\n    chart: {\n        type: 'line',\n        stacked: false\n    },\n    dataLabels: {\n        enabled: false\n    },\n    stroke: {\n        curve: 'smooth',\n        width: 2\n    },\n    xaxis: {\n        type: 'datetime',\n        labels: {\n            datetimeUTC: false\n        },\n        tooltip: {\n            enabled: false\n        }\n    },\n    yaxis: [\n        {\n            seriesName: 'Temperature',\n            title: {\n                text: 'Temperature (°C)'\n            },\n            labels: {\n                formatter: function (val) {\n                    if (val !== null && typeof val !== 'undefined')\n                        return val.toFixed(1);\n                }\n            }\n        },\n        {\n            seriesName: 'Temperature',\n            show: false\n        },\n        {\n            seriesName: 'TVOC',\n            opposite: true,\n            title: {\n                text: 'TVOC (ppb)'\n            },\n            labels: {\n                formatter: function (val) {\n                    if (val !== null && typeof val !== 'undefined')\n                        return val.toFixed(0);\n                }\n            }\n        },\n        {\n            seriesName: 'TVOC',\n            show: false\n        }\n    ],\n    tooltip: {\n        x: {\n            format: 'dd/MM/yyyy HH:mm:ss'\n        }\n    },\n    legend: {\n        position: 'top'\n    }\n};\n",
+                          "realTimeUpdate": true
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_gs601_data",
+                              "mapping": "temperature",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#e74c3c",
+                            "name": "Temperature",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          },
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_gs601_data",
+                              "mapping": "humidity",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#3498db",
+                            "name": "Humidity",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          },
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_gs601_data",
+                              "mapping": "tvoc",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#9b59b6",
+                            "name": "TVOC",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          },
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_gs601_data",
+                              "mapping": "vaping_index",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#e67e22",
+                            "name": "Vaping Index",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          }
+                        ],
+                        "type": "apex_charts"
+                      },
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 16,
+                          "sizeX": 6,
+                          "sizeY": 8
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Particulate Matter (24h)"
+                        },
+                        "properties": {
+                          "alignTimeSeries": false,
+                          "dataAppend": false,
+                          "options": "var options = {\n    chart: {\n        type: 'area',\n        stacked: false\n    },\n    dataLabels: {\n        enabled: false\n    },\n    stroke: {\n        curve: 'smooth'\n    },\n    xaxis: {\n        type: 'datetime',\n        labels: {\n            datetimeUTC: false\n        },\n        tooltip: {\n            enabled: false\n        }\n    },\n    yaxis: {\n        title: {\n            text: 'PM (µg/m³)'\n        },\n        labels: {\n            formatter: function (val) {\n                if (val !== null && typeof val !== 'undefined')\n                    return val.toFixed(0);\n            }\n        }\n    },\n    tooltip: {\n        x: {\n            format: 'dd/MM/yyyy HH:mm:ss'\n        }\n    },\n    fill: {\n        type: 'gradient',\n        gradient: {\n            opacityFrom: 0.6,\n            opacityTo: 0.1\n        }\n    },\n    legend: {\n        position: 'top'\n    }\n};\n",
+                          "realTimeUpdate": true
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_gs601_data",
+                              "mapping": "pm1_0",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#95a5a6",
+                            "name": "PM 1.0",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          },
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_gs601_data",
+                              "mapping": "pm2_5",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#f39c12",
+                            "name": "PM 2.5",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          },
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_gs601_data",
+                              "mapping": "pm10",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#d35400",
+                            "name": "PM 10",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          }
+                        ],
+                        "type": "apex_charts"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "Status",
+                    "widgets": [
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 0,
+                          "sizeX": 2,
+                          "sizeY": 4
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Tamper Status"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "enableExtraTextColor": false,
+                          "enableIconColor": false,
+                          "enableIconSize": false,
+                          "extraText": "",
+                          "extraTextColor": "#1E313E",
+                          "extraTextColorConditions": [],
+                          "extraTextConditions": [],
+                          "extraTextPosition": "above-value",
+                          "extraTextSize": "20px",
+                          "extraTextWeight": "font-light",
+                          "icon": "",
+                          "iconColor": "#1E313E",
+                          "iconColorConditions": [],
+                          "iconConditions": [],
+                          "iconGap": "8px",
+                          "iconPosition": "before-value",
+                          "iconSize": "75px",
+                          "iconVerticalOffset": "0px",
+                          "link": "",
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textColorConditions": [],
+                          "textSize": "40px",
+                          "textWeight": "font-light",
+                          "unit": "",
+                          "unitSize": "20px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_gs601_data",
+                              "mapping": "tamper_status",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#e74c3c",
+                            "name": "Tamper Status",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 2,
+                          "row": 0,
+                          "sizeX": 2,
+                          "sizeY": 4
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Buzzer Status"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "enableExtraTextColor": false,
+                          "enableIconColor": false,
+                          "enableIconSize": false,
+                          "extraText": "",
+                          "extraTextColor": "#1E313E",
+                          "extraTextColorConditions": [],
+                          "extraTextConditions": [],
+                          "extraTextPosition": "above-value",
+                          "extraTextSize": "20px",
+                          "extraTextWeight": "font-light",
+                          "icon": "",
+                          "iconColor": "#1E313E",
+                          "iconColorConditions": [],
+                          "iconConditions": [],
+                          "iconGap": "8px",
+                          "iconPosition": "before-value",
+                          "iconSize": "75px",
+                          "iconVerticalOffset": "0px",
+                          "link": "",
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textColorConditions": [],
+                          "textSize": "40px",
+                          "textWeight": "font-light",
+                          "unit": "",
+                          "unitSize": "20px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_gs601_data",
+                              "mapping": "buzzer",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#f39c12",
+                            "name": "Buzzer",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 4,
+                          "row": 0,
+                          "sizeX": 2,
+                          "sizeY": 4
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Occupancy Status"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "enableExtraTextColor": false,
+                          "enableIconColor": false,
+                          "enableIconSize": false,
+                          "extraText": "",
+                          "extraTextColor": "#1E313E",
+                          "extraTextColorConditions": [],
+                          "extraTextConditions": [],
+                          "extraTextPosition": "above-value",
+                          "extraTextSize": "20px",
+                          "extraTextWeight": "font-light",
+                          "icon": "",
+                          "iconColor": "#1E313E",
+                          "iconColorConditions": [],
+                          "iconConditions": [],
+                          "iconGap": "8px",
+                          "iconPosition": "before-value",
+                          "iconSize": "75px",
+                          "iconVerticalOffset": "0px",
+                          "link": "",
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textColorConditions": [],
+                          "textSize": "40px",
+                          "textWeight": "font-light",
+                          "unit": "",
+                          "unitSize": "20px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_gs601_data",
+                              "mapping": "occupancy_status",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#3498db",
+                            "name": "Occupancy",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 4,
+                          "sizeX": 3,
+                          "sizeY": 5
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Vaping Index Alarm"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "enableExtraTextColor": false,
+                          "enableIconColor": false,
+                          "enableIconSize": false,
+                          "extraText": "",
+                          "extraTextColor": "#1E313E",
+                          "extraTextColorConditions": [],
+                          "extraTextConditions": [],
+                          "extraTextPosition": "above-value",
+                          "extraTextSize": "20px",
+                          "extraTextWeight": "font-light",
+                          "icon": "",
+                          "iconColor": "#1E313E",
+                          "iconColorConditions": [],
+                          "iconConditions": [],
+                          "iconGap": "8px",
+                          "iconPosition": "before-value",
+                          "iconSize": "75px",
+                          "iconVerticalOffset": "0px",
+                          "link": "",
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textColorConditions": [],
+                          "textSize": "30px",
+                          "textWeight": "font-light",
+                          "unit": "",
+                          "unitSize": "20px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_gs601_data",
+                              "mapping": "vaping_index_alarm.type",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#e67e22",
+                            "name": "Vaping Alarm",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 3,
+                          "row": 4,
+                          "sizeX": 3,
+                          "sizeY": 5
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Temperature Alarm"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "enableExtraTextColor": false,
+                          "enableIconColor": false,
+                          "enableIconSize": false,
+                          "extraText": "",
+                          "extraTextColor": "#1E313E",
+                          "extraTextColorConditions": [],
+                          "extraTextConditions": [],
+                          "extraTextPosition": "above-value",
+                          "extraTextSize": "20px",
+                          "extraTextWeight": "font-light",
+                          "icon": "",
+                          "iconColor": "#1E313E",
+                          "iconColorConditions": [],
+                          "iconConditions": [],
+                          "iconGap": "8px",
+                          "iconPosition": "before-value",
+                          "iconSize": "75px",
+                          "iconVerticalOffset": "0px",
+                          "link": "",
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textColorConditions": [],
+                          "textSize": "30px",
+                          "textWeight": "font-light",
+                          "unit": "",
+                          "unitSize": "20px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_gs601_data",
+                              "mapping": "temperature_alarm.type",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#e74c3c",
+                            "name": "Temperature Alarm",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 9,
+                          "sizeX": 3,
+                          "sizeY": 5
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "PM 2.5 Alarm"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "enableExtraTextColor": false,
+                          "enableIconColor": false,
+                          "enableIconSize": false,
+                          "extraText": "",
+                          "extraTextColor": "#1E313E",
+                          "extraTextColorConditions": [],
+                          "extraTextConditions": [],
+                          "extraTextPosition": "above-value",
+                          "extraTextSize": "20px",
+                          "extraTextWeight": "font-light",
+                          "icon": "",
+                          "iconColor": "#1E313E",
+                          "iconColorConditions": [],
+                          "iconConditions": [],
+                          "iconGap": "8px",
+                          "iconPosition": "before-value",
+                          "iconSize": "75px",
+                          "iconVerticalOffset": "0px",
+                          "link": "",
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textColorConditions": [],
+                          "textSize": "30px",
+                          "textWeight": "font-light",
+                          "unit": "",
+                          "unitSize": "20px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_gs601_data",
+                              "mapping": "pm2_5_alarm.type",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#f39c12",
+                            "name": "PM 2.5 Alarm",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 3,
+                          "row": 9,
+                          "sizeX": 3,
+                          "sizeY": 5
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "TVOC Alarm"
+                        },
+                        "properties": {
+                          "decimalPlaces": 0,
+                          "enableExtraTextColor": false,
+                          "enableIconColor": false,
+                          "enableIconSize": false,
+                          "extraText": "",
+                          "extraTextColor": "#1E313E",
+                          "extraTextColorConditions": [],
+                          "extraTextConditions": [],
+                          "extraTextPosition": "above-value",
+                          "extraTextSize": "20px",
+                          "extraTextWeight": "font-light",
+                          "icon": "",
+                          "iconColor": "#1E313E",
+                          "iconColorConditions": [],
+                          "iconConditions": [],
+                          "iconGap": "8px",
+                          "iconPosition": "before-value",
+                          "iconSize": "75px",
+                          "iconVerticalOffset": "0px",
+                          "link": "",
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textColorConditions": [],
+                          "textSize": "30px",
+                          "textWeight": "font-light",
+                          "unit": "",
+                          "unitSize": "20px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_gs601_data",
+                              "mapping": "tvoc_alarm.type",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#9b59b6",
+                            "name": "TVOC Alarm",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
