@@ -1,0 +1,783 @@
+{
+  "name": "milesight_iot_uc1122",
+  "version": "1.0.0",
+  "description": "The Milesight UC1122 is a LoRaWAN remote I/O controller specifically designed for data acquisition from analog sensors and remote industrial equipment control.",
+  "author": "Thinger.io",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thinger-io/plugins.git",
+    "directory": "milesight-iot-uc1122"
+  },
+  "metadata": {
+    "name": "Milesight-Iot UC1122",
+    "description": "The Milesight UC1122 is a LoRaWAN remote I/O controller specifically designed for data acquisition from analog sensors and remote industrial equipment control.",
+    "image": "assets/uc1122.png",
+    "category": "devices",
+    "vendor": "milesight-iot"
+  },
+  "resources": {
+    "products": [
+      {
+        "description": "The Milesight UC1122 is a LoRaWAN remote I/O controller specifically designed for data acquisition from analog sensors and remote industrial equipment control.",
+        "enabled": true,
+        "name": "Milesight-Iot UC1122",
+        "product": "milesight_iot_uc1122",
+        "profile": {
+          "api": {
+            "downlink": {
+              "enabled": true,
+              "handle_connectivity": false,
+              "request": {
+                "data": {
+                  "path": "/downlink",
+                  "payload": "{\r\n    \"data\"    : \"{{payload.data=\"\"}}\",\r\n    \"port\"    :  {{payload.port=2}},\r\n    \"priority\":  {{payload.priority=3}},\r\n    \"confirmed\" :  {{payload.confirmed=false}},\r\n    \"uplink\"  :  {{property.uplink}} \r\n}",
+                  "plugin": "{{property.uplink.source}}",
+                  "target": "plugin_endpoint"
+                }
+              }
+            },
+            "uplink": {
+              "enabled": true,
+              "handle_connectivity": true,
+              "request": {
+                "data": {
+                  "payload": "{{payload}}",
+                  "payload_type": "source_payload",
+                  "resource_stream": "uplink",
+                  "target": "resource_stream"
+                }
+              }
+            }
+          },
+          "autoprovisions": {
+            "device_autoprovisioning": {
+              "config": {
+                "mode": "pattern",
+                "pattern": "uc1122_.*"
+              },
+              "enabled": true
+            }
+          },
+          "buckets": {
+            "milesight_uc1122_data": {
+              "backend": "mongodb",
+              "data": {
+                "payload": "{{payload}}",
+                "payload_type": "source_payload",
+                "resource_stream": "uplink_decoded",
+                "target": "resource_stream"
+              },
+              "enabled": true,
+              "retention": {
+                "period": 3,
+                "unit": "months"
+              },
+              "tags": []
+            }
+          },
+          "code": {
+            "code": "function decodeThingerUplink(thingerData) {\n    // 0. If data has already been decoded, we will return it\n    if (thingerData.decodedPayload) return thingerData.decodedPayload;\n    \n    // 1. Extract and Validate Input\n    // We need 'payload' (hex string) and 'fPort' (integer)\n    const hexPayload = thingerData.payload || \"\";\n    const port = thingerData.fPort || 1;\n\n    // 2. Convert Hex String to Byte Array\n    const bytes = [];\n    for (let i = 0; i < hexPayload.length; i += 2) {\n        bytes.push(parseInt(hexPayload.substr(i, 2), 16));\n    }\n\n    // 3. Dynamic Function Detection and Execution\n    \n    // CASE A: (The Things Stack v3)\n    if (typeof decodeUplink === 'function') {\n        try {\n            const input = {\n                bytes: bytes,\n                fPort: port\n            };\n            var result = decodeUplink(input);\n            \n            if (result.data) return result.data;\n\n            return result; \n        } catch (e) {\n            console.error(\"Error inside decodeUplink:\", e);\n            throw e;\n        }\n    }\n\n    // CASE B: Legacy TTN (v2)\n    else if (typeof Decoder === 'function') {\n        try {\n            return Decoder(bytes, port);\n        } catch (e) {\n            console.error(\"Error inside Decoder:\", e);\n            throw e;\n        }\n    }\n\n    // CASE C: No decoder found\n    else {\n        throw new Error(\"No compatible TTN decoder function (decodeUplink or Decoder) found in scope.\");\n    }\n}\n\n\n// TTN decoder\nfunction decodeUplink(input) {\n    var res = Decoder(input.bytes, input.fPort);\n    if (res.error) {\n        return {\n            errors: [res.error],\n        };\n    }\n    return {\n        data: res,\n    };\n}\n/**\n * Payload Decoder for The Things Network\n * \n * Copyright 2021 Milesight IoT\n * \n * @product UC11 series\n */\nfunction Decoder(bytes, port) {\n    var decoded = {};\n\n    for (i = 0; i < bytes.length;) {\n        var channel_id = bytes[i++];\n        var channel_type = bytes[i++];\n\n        // Digital Input 1\n        if (channel_id === 0x01 && channel_type !== 0xc8) {\n            decoded.digital_input = bytes[i] === 0 ? \"off\" : \"on\";\n            i += 1;\n        }\n        // Digital Output 1\n        else if (channel_id === 0x09) {\n            decoded.digital_output = bytes[i] === 0 ? \"off\" : \"on\";\n            i += 1;\n        }\n        // ADC 1\n        else if (channel_id === 0x11) {\n            decoded.analog_input_1 = {};\n            decoded.analog_input_1.cur = readInt16LE(bytes.slice(i, i + 2)) / 100;\n            decoded.analog_input_1.min = readInt16LE(bytes.slice(i + 2, i + 4)) / 100;\n            decoded.analog_input_1.max = readInt16LE(bytes.slice(i + 4, i + 6)) / 100;\n            decoded.analog_input_1.avg = readInt16LE(bytes.slice(i + 6, i + 8)) / 100;\n            i += 8;\n            continue;\n        }\n        // ADC 2\n        else if (channel_id === 0x12) {\n            decoded.analog_input_2 = {};\n            decoded.analog_input_2.cur = readInt16LE(bytes.slice(i, i + 2)) / 100;\n            decoded.analog_input_2.min = readInt16LE(bytes.slice(i + 2, i + 4)) / 100;\n            decoded.analog_input_2.max = readInt16LE(bytes.slice(i + 4, i + 6)) / 100;\n            decoded.analog_input_2.avg = readInt16LE(bytes.slice(i + 6, i + 8)) / 100;\n            i += 8;\n            continue;\n        }\n    }\n\n    return decoded;\n}\n\n/* ******************************************\n * bytes to number\n ********************************************/\nfunction readUInt8LE(bytes) {\n    return (bytes & 0xFF);\n}\n\nfunction readInt8LE(bytes) {\n    var ref = readUInt8LE(bytes);\n    return (ref > 0x7F) ? ref - 0x100 : ref;\n}\n\nfunction readUInt16LE(bytes) {\n    var value = (bytes[1] << 8) + bytes[0];\n    return (value & 0xFFFF);\n}\n\nfunction readInt16LE(bytes) {\n    var ref = readUInt16LE(bytes);\n    return (ref > 0x7FFF) ? ref - 0x10000 : ref;\n}\n\nfunction readUInt32LE(bytes) {\n    var value = (bytes[3] << 24) + (bytes[2] << 16) + (bytes[1] << 8) + bytes[0];\n    return (value & 0xFFFFFFFF);\n}\n\nfunction readInt32LE(bytes) {\n    var ref = readUInt32LE(bytes);\n    return (ref > 0x7FFFFFFF) ? ref - 0x100000000 : ref;\n}\n\nfunction readFloatLE(bytes) {\n    // JavaScript bitwise operators yield a 32 bits integer, not a float.\n    // Assume LSB (least significant byte first).\n    var bits = bytes[3] << 24 | bytes[2] << 16 | bytes[1] << 8 | bytes[0];\n    var sign = (bits >>> 31 === 0) ? 1.0 : -1.0;\n    var e = bits >>> 23 & 0xff;\n    var m = (e === 0) ? (bits & 0x7fffff) << 1 : (bits & 0x7fffff) | 0x800000;\n    var f = sign * m * Math.pow(2, e - 150);\n    return f;\n}\n",
+            "environment": "javascript",
+            "storage": "",
+            "version": "1.0"
+          },
+          "flows": {
+            "milesight_uc1122_decoder": {
+              "data": {
+                "payload": "{{payload}}",
+                "payload_function": "decodeThingerUplink",
+                "payload_type": "source_payload",
+                "resource": "uplink",
+                "source": "resource",
+                "update": "events"
+              },
+              "enabled": true,
+              "sink": {
+                "payload": "{{payload}}",
+                "payload_type": "source_payload",
+                "resource_stream": "uplink_decoded",
+                "target": "resource_stream"
+              },
+              "split_data": false
+            }
+          },
+          "properties": {
+            "uplink": {
+              "data": {
+                "payload": "{{payload}}",
+                "payload_type": "source_payload",
+                "resource": "uplink",
+                "source": "resource",
+                "update": "events"
+              },
+              "default": {
+                "source": "value"
+              },
+              "enabled": true
+            }
+          }
+        },
+        "_resources": {
+          "properties": [
+            {
+              "property": "dashboard",
+              "value": {
+                "tabs": [
+                  {
+                    "name": "UC1122 Controller",
+                    "widgets": [
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 0,
+                          "sizeX": 3,
+                          "sizeY": 10
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Digital Input"
+                        },
+                        "type": "group_widget",
+                        "widgets": [
+                          {
+                            "layout": {
+                              "col": 0,
+                              "row": 0,
+                              "sizeX": 3,
+                              "sizeY": 4
+                            },
+                            "panel": {
+                              "color": "#ffffff",
+                              "currentColor": "#ffffff",
+                              "showOffline": {
+                                "type": "none"
+                              },
+                              "title": "Legend"
+                            },
+                            "properties": {
+                              "source": "code",
+                              "template": "<div style=\"width:200px; margin:20px auto; font-family:Arial, sans-serif;\">\n  <div style=\"padding:10px; background-color:#e74c3c; color:#fff; text-align:center; margin-bottom:5px; border-radius:5px;\">\n    OFF\n  </div>\n  <div style=\"padding:10px; background-color:#2ecc71; color:#fff; text-align:center; border-radius:5px;\">\n    ON\n  </div>\n</div>"
+                            },
+                            "sources": [
+                              {
+                                "bucket": {
+                                  "backend": "mongodb",
+                                  "id": "milesight_uc1122_data",
+                                  "mapping": "device",
+                                  "tags": {
+                                    "device": [],
+                                    "group": []
+                                  }
+                                },
+                                "color": "#1abc9c",
+                                "name": "Legend",
+                                "source": "bucket",
+                                "timespan": {
+                                  "mode": "latest"
+                                }
+                              }
+                            ],
+                            "type": "html_time"
+                          },
+                          {
+                            "layout": {
+                              "col": 3,
+                              "row": 0,
+                              "sizeX": 3,
+                              "sizeY": 4
+                            },
+                            "panel": {
+                              "color": "#ffffff",
+                              "currentColor": "#ffffff",
+                              "showOffline": {
+                                "type": "none"
+                              },
+                              "title": "Status"
+                            },
+                            "properties": {
+                              "color": "#4bd763",
+                              "colors": [
+                                {
+                                  "blink": false,
+                                  "color": "#e51515",
+                                  "max": 0,
+                                  "min": 0
+                                },
+                                {
+                                  "blink": false,
+                                  "color": "#19c219",
+                                  "max": 1,
+                                  "min": 1
+                                }
+                              ],
+                              "size": "150px"
+                            },
+                            "sources": [
+                              {
+                                "bucket": {
+                                  "backend": "mongodb",
+                                  "id": "milesight_uc1122_data",
+                                  "mapping": "digital_input",
+                                  "tags": {
+                                    "device": [],
+                                    "group": []
+                                  }
+                                },
+                                "color": "#1abc9c",
+                                "name": "Digital Input",
+                                "processing": {
+                                  "input": "function(value) { return value === 'on' ? 1 : 0; }"
+                                },
+                                "source": "bucket",
+                                "timespan": {
+                                  "mode": "latest"
+                                }
+                              }
+                            ],
+                            "type": "led"
+                          }
+                        ]
+                      },
+                      {
+                        "layout": {
+                          "col": 3,
+                          "row": 0,
+                          "sizeX": 3,
+                          "sizeY": 10
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Digital Output"
+                        },
+                        "type": "group_widget",
+                        "widgets": [
+                          {
+                            "layout": {
+                              "col": 0,
+                              "row": 0,
+                              "sizeX": 3,
+                              "sizeY": 4
+                            },
+                            "panel": {
+                              "color": "#ffffff",
+                              "currentColor": "#ffffff",
+                              "showOffline": {
+                                "type": "none"
+                              },
+                              "title": "Legend"
+                            },
+                            "properties": {
+                              "source": "code",
+                              "template": "<div style=\"width:200px; margin:20px auto; font-family:Arial, sans-serif;\">\n  <div style=\"padding:10px; background-color:#e74c3c; color:#fff; text-align:center; margin-bottom:5px; border-radius:5px;\">\n    OFF\n  </div>\n  <div style=\"padding:10px; background-color:#2ecc71; color:#fff; text-align:center; border-radius:5px;\">\n    ON\n  </div>\n</div>"
+                            },
+                            "sources": [
+                              {
+                                "bucket": {
+                                  "backend": "mongodb",
+                                  "id": "milesight_uc1122_data",
+                                  "mapping": "device",
+                                  "tags": {
+                                    "device": [],
+                                    "group": []
+                                  }
+                                },
+                                "color": "#1abc9c",
+                                "name": "Legend",
+                                "source": "bucket",
+                                "timespan": {
+                                  "mode": "latest"
+                                }
+                              }
+                            ],
+                            "type": "html_time"
+                          },
+                          {
+                            "layout": {
+                              "col": 3,
+                              "row": 0,
+                              "sizeX": 3,
+                              "sizeY": 4
+                            },
+                            "panel": {
+                              "color": "#ffffff",
+                              "currentColor": "#ffffff",
+                              "showOffline": {
+                                "type": "none"
+                              },
+                              "title": "Status"
+                            },
+                            "properties": {
+                              "color": "#4bd763",
+                              "colors": [
+                                {
+                                  "blink": false,
+                                  "color": "#e51515",
+                                  "max": 0,
+                                  "min": 0
+                                },
+                                {
+                                  "blink": false,
+                                  "color": "#19c219",
+                                  "max": 1,
+                                  "min": 1
+                                }
+                              ],
+                              "size": "150px"
+                            },
+                            "sources": [
+                              {
+                                "bucket": {
+                                  "backend": "mongodb",
+                                  "id": "milesight_uc1122_data",
+                                  "mapping": "digital_output",
+                                  "tags": {
+                                    "device": [],
+                                    "group": []
+                                  }
+                                },
+                                "color": "#1abc9c",
+                                "name": "Digital Output",
+                                "processing": {
+                                  "input": "function(value) { return value === 'on' ? 1 : 0; }"
+                                },
+                                "source": "bucket",
+                                "timespan": {
+                                  "mode": "latest"
+                                }
+                              }
+                            ],
+                            "type": "led"
+                          }
+                        ]
+                      },
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 10,
+                          "sizeX": 2,
+                          "sizeY": 5
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Analog Input 1 (Current)"
+                        },
+                        "properties": {
+                          "decimalPlaces": 2,
+                          "enableExtraTextColor": false,
+                          "enableIconColor": false,
+                          "enableIconSize": false,
+                          "extraText": "",
+                          "extraTextColor": "#1E313E",
+                          "extraTextColorConditions": [],
+                          "extraTextConditions": [],
+                          "extraTextPosition": "above-value",
+                          "extraTextSize": "20px",
+                          "extraTextWeight": "font-light",
+                          "icon": "",
+                          "iconColor": "#1E313E",
+                          "iconColorConditions": [],
+                          "iconConditions": [],
+                          "iconGap": "8px",
+                          "iconPosition": "before-value",
+                          "iconSize": "75px",
+                          "iconVerticalOffset": "0px",
+                          "link": "",
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textColorConditions": [],
+                          "textSize": "60px",
+                          "textWeight": "font-light",
+                          "unit": "V",
+                          "unitSize": "20px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc1122_data",
+                              "mapping": "analog_input_1.cur",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#1abc9c",
+                            "name": "ADC1 Current",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 2,
+                          "row": 10,
+                          "sizeX": 2,
+                          "sizeY": 5
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Analog Input 2 (Current)"
+                        },
+                        "properties": {
+                          "decimalPlaces": 2,
+                          "enableExtraTextColor": false,
+                          "enableIconColor": false,
+                          "enableIconSize": false,
+                          "extraText": "",
+                          "extraTextColor": "#1E313E",
+                          "extraTextColorConditions": [],
+                          "extraTextConditions": [],
+                          "extraTextPosition": "above-value",
+                          "extraTextSize": "20px",
+                          "extraTextWeight": "font-light",
+                          "icon": "",
+                          "iconColor": "#1E313E",
+                          "iconColorConditions": [],
+                          "iconConditions": [],
+                          "iconGap": "8px",
+                          "iconPosition": "before-value",
+                          "iconSize": "75px",
+                          "iconVerticalOffset": "0px",
+                          "link": "",
+                          "textAlign": "center",
+                          "textColor": "#1E313E",
+                          "textColorConditions": [],
+                          "textSize": "60px",
+                          "textWeight": "font-light",
+                          "unit": "V",
+                          "unitSize": "20px"
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc1122_data",
+                              "mapping": "analog_input_2.cur",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#1abc9c",
+                            "name": "ADC2 Current",
+                            "source": "bucket",
+                            "timespan": {
+                              "mode": "latest"
+                            }
+                          }
+                        ],
+                        "type": "text"
+                      },
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 15,
+                          "sizeX": 6,
+                          "sizeY": 10
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Analog Input 1 - Statistics (24h)"
+                        },
+                        "properties": {
+                          "alignTimeSeries": false,
+                          "dataAppend": false,
+                          "options": "var options = {\n    chart: {\n        type: 'line'\n    },\n    dataLabels: {\n        enabled: false\n    },\n    stroke: {\n        curve: 'smooth',\n        width: 2\n    },\n    xaxis: {\n        type: 'datetime',\n        labels: {\n            datetimeUTC: false\n        },\n        tooltip: {\n            enabled: false\n        }\n    },\n    yaxis: {\n        labels: {\n            formatter: function (val) {\n                if (val !== null && typeof val !== 'undefined')\n                    return val.toFixed(2) + ' V';\n            }\n        }\n    },\n    tooltip: {\n        x: {\n            format: 'dd/MM/yyyy HH:mm:ss'\n        }\n    }\n};\n",
+                          "realTimeUpdate": true
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc1122_data",
+                              "mapping": "analog_input_1.cur",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#3498db",
+                            "name": "Current",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          },
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc1122_data",
+                              "mapping": "analog_input_1.min",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#2ecc71",
+                            "name": "Min",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          },
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc1122_data",
+                              "mapping": "analog_input_1.max",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#e74c3c",
+                            "name": "Max",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          },
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc1122_data",
+                              "mapping": "analog_input_1.avg",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#f39c12",
+                            "name": "Avg",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          }
+                        ],
+                        "type": "apex_charts"
+                      },
+                      {
+                        "layout": {
+                          "col": 0,
+                          "row": 25,
+                          "sizeX": 6,
+                          "sizeY": 10
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Analog Input 2 - Statistics (24h)"
+                        },
+                        "properties": {
+                          "alignTimeSeries": false,
+                          "dataAppend": false,
+                          "options": "var options = {\n    chart: {\n        type: 'line'\n    },\n    dataLabels: {\n        enabled: false\n    },\n    stroke: {\n        curve: 'smooth',\n        width: 2\n    },\n    xaxis: {\n        type: 'datetime',\n        labels: {\n            datetimeUTC: false\n        },\n        tooltip: {\n            enabled: false\n        }\n    },\n    yaxis: {\n        labels: {\n            formatter: function (val) {\n                if (val !== null && typeof val !== 'undefined')\n                    return val.toFixed(2) + ' V';\n            }\n        }\n    },\n    tooltip: {\n        x: {\n            format: 'dd/MM/yyyy HH:mm:ss'\n        }\n    }\n};\n",
+                          "realTimeUpdate": true
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc1122_data",
+                              "mapping": "analog_input_2.cur",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#9b59b6",
+                            "name": "Current",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          },
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc1122_data",
+                              "mapping": "analog_input_2.min",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#1abc9c",
+                            "name": "Min",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          },
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc1122_data",
+                              "mapping": "analog_input_2.max",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#e67e22",
+                            "name": "Max",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          },
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc1122_data",
+                              "mapping": "analog_input_2.avg",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#95a5a6",
+                            "name": "Avg",
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          }
+                        ],
+                        "type": "apex_charts"
+                      },
+                      {
+                        "layout": {
+                          "col": 4,
+                          "row": 10,
+                          "sizeX": 2,
+                          "sizeY": 5
+                        },
+                        "panel": {
+                          "color": "#ffffff",
+                          "currentColor": "#ffffff",
+                          "showOffline": {
+                            "type": "none"
+                          },
+                          "title": "Digital I/O State (24h)"
+                        },
+                        "properties": {
+                          "alignTimeSeries": false,
+                          "dataAppend": false,
+                          "options": "var options = {\n    chart: {\n        type: 'line',\n        stacked: false\n    },\n    dataLabels: {\n        enabled: false\n    },\n    stroke: {\n        curve: 'stepline',\n        width: 2\n    },\n    xaxis: {\n        type: 'datetime',\n        labels: {\n            datetimeUTC: false\n        },\n        tooltip: {\n            enabled: false\n        }\n    },\n    yaxis: {\n        min: 0,\n        max: 1,\n        labels: {\n            formatter: function (val) {\n                return val === 1 ? 'ON' : 'OFF';\n            }\n        }\n    },\n    tooltip: {\n        x: {\n            format: 'dd/MM/yyyy HH:mm:ss'\n        }\n    }\n};\n",
+                          "realTimeUpdate": true
+                        },
+                        "sources": [
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc1122_data",
+                              "mapping": "digital_input",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#3498db",
+                            "name": "Digital Input",
+                            "processing": {
+                              "input": "function(value) { return value === 'on' ? 1 : 0; }"
+                            },
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          },
+                          {
+                            "bucket": {
+                              "backend": "mongodb",
+                              "id": "milesight_uc1122_data",
+                              "mapping": "digital_output",
+                              "tags": {
+                                "device": [],
+                                "group": []
+                              }
+                            },
+                            "color": "#e74c3c",
+                            "name": "Digital Output",
+                            "processing": {
+                              "input": "function(value) { return value === 'on' ? 1 : 0; }"
+                            },
+                            "source": "bucket",
+                            "timespan": {
+                              "magnitude": "hour",
+                              "mode": "relative",
+                              "period": "latest",
+                              "value": 24
+                            }
+                          }
+                        ],
+                        "type": "apex_charts"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
