@@ -1,0 +1,651 @@
+{
+    "name": "milesight-iot-gs101",
+    "version": "1.0.0",
+    "description": "GS101 is a LoRaWAN ® residential gas detector to detect thenatural gas leak and send alarms.",
+    "author": "Thinger.io",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/thinger-io/plugins.git",
+        "directory": "milesight-iot-gs101"
+    },
+    "metadata": {
+        "name": "Milesight-Iot GS101",
+        "description": "GS101 is a LoRaWAN ® residential gas detector to detect thenatural gas leak and send alarms.",
+        "image": "assets/gs101.png",
+        "category": "devices",
+        "vendor": "milesight-iot"
+    },
+    "resources": {
+        "products": [
+            {
+                "description": "GS101 is a LoRaWAN ® residential gas detector to detect thenatural gas leak and send alarms.",
+                "enabled": true,
+                "name": "Milesight-Iot GS101",
+                "product": "milesight_iot_gs101",
+                "profile": {
+                    "api": {
+                        "downlink": {
+                            "enabled": true,
+                            "handle_connectivity": false,
+                            "request": {
+                                "data": {
+                                    "path": "/downlink",
+                                    "payload": "{\r\n    \"data\"    : \"{{payload.data=\"\"}}\",\r\n    \"port\"    :  {{payload.port=2}},\r\n    \"priority\":  {{payload.priority=3}},\r\n    \"confirmed\" :  {{payload.confirmed=false}},\r\n    \"uplink\"  :  {{property.uplink}} \r\n}",
+                                    "payload_function": "",
+                                    "payload_type": "",
+                                    "plugin": "{{property.uplink.source}}",
+                                    "target": "plugin_endpoint"
+                                }
+                            }
+                        },
+                        "uplink": {
+                            "enabled": true,
+                            "handle_connectivity": true,
+                            "request": {
+                                "data": {
+                                    "payload": "{{payload}}",
+                                    "payload_function": "",
+                                    "payload_type": "source_payload",
+                                    "resource_stream": "uplink",
+                                    "target": "resource_stream"
+                                }
+                            }
+                        }
+                    },
+                    "autoprovisions": {
+                        "device_autoprovisioning": {
+                            "config": {
+                                "mode": "pattern",
+                                "pattern": "gs101_.*"
+                            },
+                            "enabled": true
+                        }
+                    },
+                    "buckets": {
+                        "milesight_gs101_data": {
+                            "backend": "mongodb",
+                            "data": {
+                                "payload": "{{payload}}",
+                                "payload_function": "",
+                                "payload_type": "source_payload",
+                                "resource_stream": "uplink_decoded",
+                                "source": "resource_stream"
+                            },
+                            "enabled": true,
+                            "retention": {
+                                "period": 3,
+                                "unit": "months"
+                            },
+                            "tags": []
+                        }
+                    },
+                    "code": {
+                        "code": "function decodeThingerUplink(thingerData) {\n    // 0. If data has already been decoded, we will return it\n    if (thingerData.decodedPayload) return thingerData.decodedPayload;\n    \n    // 1. Extract and Validate Input\n    // We need 'payload' (hex string) and 'fPort' (integer)\n    const hexPayload = thingerData.payload || \"\";\n    const port = thingerData.fPort || 1;\n\n    // 2. Convert Hex String to Byte Array\n    const bytes = [];\n    for (let i = 0; i < hexPayload.length; i += 2) {\n        bytes.push(parseInt(hexPayload.substr(i, 2), 16));\n    }\n\n    // 3. Dynamic Function Detection and Execution\n    \n    // CASE A: (The Things Stack v3)\n    if (typeof decodeUplink === 'function') {\n        try {\n            const input = {\n                bytes: bytes,\n                fPort: port\n            };\n            var result = decodeUplink(input);\n            \n            if (result.data) return result.data;\n\n            return result; \n        } catch (e) {\n            console.error(\"Error inside decodeUplink:\", e);\n            throw e;\n        }\n    }\n\n    // CASE B: Legacy TTN (v2)\n    else if (typeof Decoder === 'function') {\n        try {\n            return Decoder(bytes, port);\n        } catch (e) {\n            console.error(\"Error inside Decoder:\", e);\n            throw e;\n        }\n    }\n\n    // CASE C: No decoder found\n    else {\n        throw new Error(\"No compatible TTN decoder function (decodeUplink or Decoder) found in scope.\");\n    }\n}\n\n\n// TTN decoder\nfunction decodeUplink(input) {\n    var res = Decoder(input.bytes, input.fPort);\n    if (res.error) {\n        return {\n            errors: [res.error],\n        };\n    }\n    return {\n        data: res,\n    };\n}\n/**\n * Payload Decoder for The Things Network\n *\n * Copyright 2023 Milesight IoT\n *\n * @product GS101\n */\nfunction Decoder(bytes, port) {\n    return milesight(bytes);\n}\n\nfunction milesight(bytes) {\n    var decoded = {};\n\n    for (var i = 0; i < bytes.length; ) {\n        var channel_id = bytes[i++];\n        var channel_type = bytes[i++];\n        //gas status\n        if (channel_id === 0x05 && channel_type === 0x8e) {\n            decoded.state = bytes[i] === 0 ? \"normal\" : \"abnormal\";\n            i += 1;\n        }\n        //vale\n        else if (channel_id === 0x06 && channel_type === 0x01) {\n            decoded.valve = bytes[i] === 0 ? \"close\" : \"open\";\n            i += 1;\n        }\n        //relay\n        else if (channel_id === 0x07 && channel_type === 0x01) {\n            decoded.relay = bytes[i] === 0 ? \"close\" : \"open\";\n            i += 1;\n        }\n        //remained life time for the sensor\n        else if (channel_id === 0x08 && channel_type === 0x90) {\n            decoded.life_remain = readUInt32LE(bytes.slice(i, i + 4)) + \"s\";\n            i += 4;\n        }\n        //alarm info\n        else if (channel_id === 0xff && channel_type === 0x3f) {\n            var alarm_type = bytes[i];\n            switch (alarm_type) {\n                case 0:\n                    decoded.alarm = \"power down\";\n                    i += 1;\n                    break;\n                case 1:\n                    decoded.alarm = \"power on\";\n                    i += 1;\n                    break;\n                case 2:\n                    decoded.alarm = \"sensor failure\";\n                    i += 1;\n                    break;\n                case 3:\n                    decoded.alarm = \"sensor recover\";\n                    i += 1;\n                    break;\n                case 4:\n                    decoded.alarm = \"sensor about to fail\";\n                    i += 1;\n                    break;\n                case 5:\n                    decoded.alarm = \"sensor failed\";\n                    i += 1;\n                    break;\n            }\n        } else {\n            break;\n        }\n    }\n\n    return decoded;\n}\n\n/* ******************************************\n * bytes to number\n ********************************************/\nfunction readUInt32LE(bytes) {\n    var value = (bytes[3] << 24) + (bytes[2] << 16) + (bytes[1] << 8) + bytes[0];\n    return (value & 0xffffffff) >>> 0;\n}\n",
+                        "environment": "javascript",
+                        "storage": "",
+                        "version": "1.0"
+                    },
+                    "flows": {
+                        "milesight_gs101_decoder": {
+                            "data": {
+                                "payload": "{{payload}}",
+                                "payload_function": "decodeThingerUplink",
+                                "payload_type": "source_payload",
+                                "resource": "uplink",
+                                "source": "resource",
+                                "update": "events"
+                            },
+                            "enabled": true,
+                            "sink": {
+                                "payload": "{{payload}}",
+                                "payload_function": "",
+                                "payload_type": "source_payload",
+                                "resource_stream": "uplink_decoded",
+                                "target": "resource_stream"
+                            },
+                            "split_data": false
+                        }
+                    },
+                    "properties": {
+                        "uplink": {
+                            "data": {
+                                "payload": "{{payload}}",
+                                "payload_function": "",
+                                "payload_type": "source_payload",
+                                "resource": "uplink",
+                                "source": "resource",
+                                "update": "events"
+                            },
+                            "default": {
+                                "source": "value"
+                            },
+                            "enabled": true
+                        }
+                    }
+                },
+                "_resources": {
+                    "properties": [
+                        {
+                            "property": "dashboard",
+                            "value": {
+                                "tabs": [
+                                    {
+                                        "name": "Overview",
+                                        "widgets": [
+                                            {
+                                                "layout": {
+                                                    "col": 0,
+                                                    "row": 0,
+                                                    "sizeX": 3,
+                                                    "sizeY": 10
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "Alarm Status"
+                                                },
+                                                "type": "group_widget",
+                                                "widgets": [
+                                                    {
+                                                        "layout": {
+                                                            "col": 0,
+                                                            "row": 0,
+                                                            "sizeX": 3,
+                                                            "sizeY": 10
+                                                        },
+                                                        "panel": {
+                                                            "color": "#ffffff",
+                                                            "currentColor": "#ffffff",
+                                                            "showOffline": {
+                                                                "type": "none"
+                                                            },
+                                                            "title": "Legend"
+                                                        },
+                                                        "properties": {
+                                                            "source": "code",
+                                                            "template": "<div style=\"width:200px; margin:20px auto; font-family:Arial, sans-serif;\">\n  <div style=\"padding:10px; background-color:#7f8c8d; color:#fff; text-align:center; margin-bottom:5px; border-radius:5px;\">\n    Power Off\n  </div>\n  <div style=\"padding:10px; background-color:#2ecc71; color:#fff; text-align:center; margin-bottom:5px; border-radius:5px;\">\n    Power On\n  </div>\n  <div style=\"padding:10px; background-color:#e74c3c; color:#fff; text-align:center; margin-bottom:5px; border-radius:5px;\">\n    Sensor Fault\n  </div>\n  <div style=\"padding:10px; background-color:#f39c12; color:#fff; text-align:center; margin-bottom:5px; border-radius:5px;\">\n    Sensor Fault Recovered\n  </div>\n  <div style=\"padding:10px; background-color:#9b59b6; color:#fff; text-align:center; margin-bottom:5px; border-radius:5px;\">\n    Sensor Will Be Invalid Soon\n  </div>\n  <div style=\"padding:10px; background-color:#34495e; color:#fff; text-align:center; border-radius:5px;\">\n    Device Invalid\n  </div>\n</div>"
+                                                        },
+                                                        "sources": [
+                                                            {
+                                                                "bucket": {
+                                                                    "backend": "mongodb",
+                                                                    "id": "milesight_gs101_data",
+                                                                    "mapping": "device",
+                                                                    "tags": {
+                                                                        "device": [],
+                                                                        "group": []
+                                                                    }
+                                                                },
+                                                                "color": "#1abc9c",
+                                                                "name": "Legend",
+                                                                "source": "bucket",
+                                                                "timespan": {
+                                                                    "mode": "latest"
+                                                                }
+                                                            }
+                                                        ],
+                                                        "type": "html_time"
+                                                    },
+                                                    {
+                                                        "layout": {
+                                                            "col": 3,
+                                                            "row": 0,
+                                                            "sizeX": 3,
+                                                            "sizeY": 9
+                                                        },
+                                                        "panel": {
+                                                            "color": "#ffffff",
+                                                            "currentColor": "#ffffff",
+                                                            "showFullscreen": true,
+                                                            "showOffline": {
+                                                                "type": "none"
+                                                            },
+                                                            "title": "Status"
+                                                        },
+                                                        "properties": {
+                                                            "color": "#4bd763",
+                                                            "colors": [
+                                                                {
+                                                                    "blink": true,
+                                                                    "color": "#778377",
+                                                                    "max": 0,
+                                                                    "min": 0
+                                                                },
+                                                                {
+                                                                    "blink": true,
+                                                                    "color": "#19c219",
+                                                                    "max": 1,
+                                                                    "min": 1
+                                                                },
+                                                                {
+                                                                    "blink": true,
+                                                                    "color": "#e51515",
+                                                                    "max": 2,
+                                                                    "min": 2
+                                                                },
+                                                                {
+                                                                    "blink": true,
+                                                                    "color": "#e3b716",
+                                                                    "max": 3,
+                                                                    "min": 3
+                                                                },
+                                                                {
+                                                                    "blink": true,
+                                                                    "color": "#a723d7",
+                                                                    "max": 4,
+                                                                    "min": 4
+                                                                },
+                                                                {
+                                                                    "blink": true,
+                                                                    "color": "#34495e",
+                                                                    "max": 5,
+                                                                    "min": 5
+                                                                }
+                                                            ],
+                                                            "size": "150px"
+                                                        },
+                                                        "sources": [
+                                                            {
+                                                                "bucket": {
+                                                                    "backend": "mongodb",
+                                                                    "id": "milesight_gs101_data",
+                                                                    "mapping": "alarm",
+                                                                    "tags": {
+                                                                        "device": [],
+                                                                        "group": []
+                                                                    }
+                                                                },
+                                                                "color": "#1abc9c",
+                                                                "name": "Alarm Status",
+                                                                "processing": {
+                                                                    "input": "alarmStatusToCode"
+                                                                },
+                                                                "source": "bucket",
+                                                                "timespan": {
+                                                                    "mode": "latest"
+                                                                }
+                                                            }
+                                                        ],
+                                                        "type": "led"
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                "layout": {
+                                                    "col": 3,
+                                                    "row": 0,
+                                                    "sizeX": 3,
+                                                    "sizeY": 5
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "Gas Status"
+                                                },
+                                                "properties": {
+                                                    "decimalPlaces": 2,
+                                                    "enableExtraTextColor": false,
+                                                    "enableIconColor": false,
+                                                    "enableIconSize": false,
+                                                    "extraText": "",
+                                                    "extraTextColor": "#1E313E",
+                                                    "extraTextColorConditions": [],
+                                                    "extraTextConditions": [],
+                                                    "extraTextPosition": "above-value",
+                                                    "extraTextSize": "20px",
+                                                    "extraTextWeight": "font-light",
+                                                    "icon": "",
+                                                    "iconColor": "#1E313E",
+                                                    "iconColorConditions": [],
+                                                    "iconConditions": [],
+                                                    "iconGap": "8px",
+                                                    "iconPosition": "before-value",
+                                                    "iconSize": "75px",
+                                                    "iconVerticalOffset": "0px",
+                                                    "link": "",
+                                                    "textAlign": "center",
+                                                    "textColor": "#1E313E",
+                                                    "textColorConditions": [],
+                                                    "textSize": "75px",
+                                                    "textWeight": "font-light",
+                                                    "unit": "",
+                                                    "unitSize": "20px"
+                                                },
+                                                "sources": [
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "mongodb",
+                                                            "id": "milesight_gs101_data",
+                                                            "mapping": "gas_status",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#1abc9c",
+                                                        "name": "Gas Status",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "mode": "latest"
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "text"
+                                            },
+                                            {
+                                                "layout": {
+                                                    "col": 3,
+                                                    "row": 5,
+                                                    "sizeX": 3,
+                                                    "sizeY": 5
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "Life Remaining"
+                                                },
+                                                "properties": {
+                                                    "decimalPlaces": 0,
+                                                    "enableExtraTextColor": false,
+                                                    "enableIconColor": false,
+                                                    "enableIconSize": false,
+                                                    "extraText": "",
+                                                    "extraTextColor": "#1E313E",
+                                                    "extraTextColorConditions": [],
+                                                    "extraTextConditions": [],
+                                                    "extraTextPosition": "above-value",
+                                                    "extraTextSize": "20px",
+                                                    "extraTextWeight": "font-light",
+                                                    "icon": "",
+                                                    "iconColor": "#1E313E",
+                                                    "iconColorConditions": [],
+                                                    "iconConditions": [],
+                                                    "iconGap": "8px",
+                                                    "iconPosition": "before-value",
+                                                    "iconSize": "75px",
+                                                    "iconVerticalOffset": "0px",
+                                                    "link": "",
+                                                    "textAlign": "center",
+                                                    "textColor": "#1E313E",
+                                                    "textColorConditions": [],
+                                                    "textSize": "75px",
+                                                    "textWeight": "font-light",
+                                                    "unit": "s",
+                                                    "unitSize": "20px"
+                                                },
+                                                "sources": [
+                                                    {
+                                                        "bucket": {
+                                                            "backend": "mongodb",
+                                                            "id": "milesight_gs101_data",
+                                                            "mapping": "life_remain",
+                                                            "tags": {
+                                                                "device": [],
+                                                                "group": []
+                                                            }
+                                                        },
+                                                        "color": "#1abc9c",
+                                                        "name": "Life Remaining",
+                                                        "source": "bucket",
+                                                        "timespan": {
+                                                            "mode": "latest"
+                                                        }
+                                                    }
+                                                ],
+                                                "type": "text"
+                                            },
+                                            {
+                                                "layout": {
+                                                    "col": 0,
+                                                    "row": 10,
+                                                    "sizeX": 3,
+                                                    "sizeY": 6
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "Relay Output Status"
+                                                },
+                                                "type": "group_widget",
+                                                "widgets": [
+                                                    {
+                                                        "layout": {
+                                                            "col": 0,
+                                                            "row": 0,
+                                                            "sizeX": 3,
+                                                            "sizeY": 5
+                                                        },
+                                                        "panel": {
+                                                            "color": "#ffffff",
+                                                            "currentColor": "#ffffff",
+                                                            "showOffline": {
+                                                                "type": "none"
+                                                            },
+                                                            "title": "Legend"
+                                                        },
+                                                        "properties": {
+                                                            "source": "code",
+                                                            "template": "<div style=\"width:200px; margin:20px auto; font-family:Arial, sans-serif;\">\n  <div style=\"padding:10px; background-color:#e74c3c; color:#fff; text-align:center; margin-bottom:5px; border-radius:5px;\">\n    Off\n  </div>\n  <div style=\"padding:10px; background-color:#2ecc71; color:#fff; text-align:center; margin-bottom:5px; border-radius:5px;\">\n    On\n  </div>\n</div>"
+                                                        },
+                                                        "sources": [
+                                                            {
+                                                                "bucket": {
+                                                                    "backend": "mongodb",
+                                                                    "id": "milesight_gs101_data",
+                                                                    "mapping": "device",
+                                                                    "tags": {
+                                                                        "device": [],
+                                                                        "group": []
+                                                                    }
+                                                                },
+                                                                "color": "#1abc9c",
+                                                                "name": "Legend",
+                                                                "source": "bucket",
+                                                                "timespan": {
+                                                                    "mode": "latest"
+                                                                }
+                                                            }
+                                                        ],
+                                                        "type": "html_time"
+                                                    },
+                                                    {
+                                                        "layout": {
+                                                            "col": 3,
+                                                            "row": 0,
+                                                            "sizeX": 3,
+                                                            "sizeY": 5
+                                                        },
+                                                        "panel": {
+                                                            "color": "#ffffff",
+                                                            "currentColor": "#ffffff",
+                                                            "showFullscreen": true,
+                                                            "showOffline": {
+                                                                "type": "none"
+                                                            },
+                                                            "title": "Status"
+                                                        },
+                                                        "properties": {
+                                                            "color": "#4bd763",
+                                                            "colors": [
+                                                                {
+                                                                    "blink": true,
+                                                                    "color": "#e51515",
+                                                                    "max": 0,
+                                                                    "min": 0
+                                                                },
+                                                                {
+                                                                    "blink": true,
+                                                                    "color": "#19c219",
+                                                                    "max": 1,
+                                                                    "min": 1
+                                                                }
+                                                            ],
+                                                            "size": "150px"
+                                                        },
+                                                        "sources": [
+                                                            {
+                                                                "bucket": {
+                                                                    "backend": "mongodb",
+                                                                    "id": "milesight_gs101_data",
+                                                                    "mapping": "relay_output_status",
+                                                                    "tags": {
+                                                                        "device": [],
+                                                                        "group": []
+                                                                    }
+                                                                },
+                                                                "color": "#1abc9c",
+                                                                "name": "Relay Status",
+                                                                "processing": {
+                                                                    "input": "relayStatusToCode"
+                                                                },
+                                                                "source": "bucket",
+                                                                "timespan": {
+                                                                    "mode": "latest"
+                                                                }
+                                                            }
+                                                        ],
+                                                        "type": "led"
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                "layout": {
+                                                    "col": 3,
+                                                    "row": 10,
+                                                    "sizeX": 3,
+                                                    "sizeY": 6
+                                                },
+                                                "panel": {
+                                                    "color": "#ffffff",
+                                                    "currentColor": "#ffffff",
+                                                    "showOffline": {
+                                                        "type": "none"
+                                                    },
+                                                    "title": "Valve Status"
+                                                },
+                                                "type": "group_widget",
+                                                "widgets": [
+                                                    {
+                                                        "layout": {
+                                                            "col": 0,
+                                                            "row": 0,
+                                                            "sizeX": 3,
+                                                            "sizeY": 5
+                                                        },
+                                                        "panel": {
+                                                            "color": "#ffffff",
+                                                            "currentColor": "#ffffff",
+                                                            "showOffline": {
+                                                                "type": "none"
+                                                            },
+                                                            "title": "Legend"
+                                                        },
+                                                        "properties": {
+                                                            "source": "code",
+                                                            "template": "<div style=\"width:200px; margin:20px auto; font-family:Arial, sans-serif;\">\n  <div style=\"padding:10px; background-color:#e74c3c; color:#fff; text-align:center; margin-bottom:5px; border-radius:5px;\">\n    Off\n  </div>\n  <div style=\"padding:10px; background-color:#2ecc71; color:#fff; text-align:center; margin-bottom:5px; border-radius:5px;\">\n    On\n  </div>\n</div>"
+                                                        },
+                                                        "sources": [
+                                                            {
+                                                                "bucket": {
+                                                                    "backend": "mongodb",
+                                                                    "id": "milesight_gs101_data",
+                                                                    "mapping": "device",
+                                                                    "tags": {
+                                                                        "device": [],
+                                                                        "group": []
+                                                                    }
+                                                                },
+                                                                "color": "#1abc9c",
+                                                                "name": "Legend",
+                                                                "source": "bucket",
+                                                                "timespan": {
+                                                                    "mode": "latest"
+                                                                }
+                                                            }
+                                                        ],
+                                                        "type": "html_time"
+                                                    },
+                                                    {
+                                                        "layout": {
+                                                            "col": 3,
+                                                            "row": 0,
+                                                            "sizeX": 3,
+                                                            "sizeY": 5
+                                                        },
+                                                        "panel": {
+                                                            "color": "#ffffff",
+                                                            "currentColor": "#ffffff",
+                                                            "showFullscreen": true,
+                                                            "showOffline": {
+                                                                "type": "none"
+                                                            },
+                                                            "title": "Status"
+                                                        },
+                                                        "properties": {
+                                                            "color": "#4bd763",
+                                                            "colors": [
+                                                                {
+                                                                    "blink": true,
+                                                                    "color": "#e51515",
+                                                                    "max": 0,
+                                                                    "min": 0
+                                                                },
+                                                                {
+                                                                    "blink": true,
+                                                                    "color": "#19c219",
+                                                                    "max": 1,
+                                                                    "min": 1
+                                                                }
+                                                            ],
+                                                            "size": "150px"
+                                                        },
+                                                        "sources": [
+                                                            {
+                                                                "bucket": {
+                                                                    "backend": "mongodb",
+                                                                    "id": "milesight_gs101_data",
+                                                                    "mapping": "valve_status",
+                                                                    "tags": {
+                                                                        "device": [],
+                                                                        "group": []
+                                                                    }
+                                                                },
+                                                                "color": "#1abc9c",
+                                                                "name": "Valve Status",
+                                                                "processing": {
+                                                                    "input": "valveStatusToCode"
+                                                                },
+                                                                "source": "bucket",
+                                                                "timespan": {
+                                                                    "mode": "latest"
+                                                                }
+                                                            }
+                                                        ],
+                                                        "type": "led"
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+}
